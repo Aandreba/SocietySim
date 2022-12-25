@@ -68,7 +68,10 @@ proc::entry! {
     "vkEnumeratePhysicalDevices",
     "vkGetPhysicalDeviceProperties",
     "vkCreateDevice",
-    "vkGetPhysicalDeviceQueueFamilyProperties"
+    "vkGetPhysicalDeviceQueueFamilyProperties",
+    "vkGetPhysicalDeviceFeatures",
+    "vkDestroyDevice",
+    "vkGetDeviceQueue"
 }
 
 impl Entry {

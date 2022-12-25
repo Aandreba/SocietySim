@@ -45,7 +45,6 @@ pub fn vulkan_allocator<A: Allocator> (alloc: &'static VulkanAllocator<A>) -> cr
     extern "system" fn free_fn<A: std::alloc::Allocator> (data: *mut c_void, ptr: *mut c_void) {
         unsafe {
             let this = &*(data as *const VulkanAllocator<A>);
-            if let Some(layout) = this.map.
         }
 
         todo!()

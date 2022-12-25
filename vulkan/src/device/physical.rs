@@ -1,7 +1,7 @@
 use std::{num::NonZeroU64, ptr::addr_of_mut, ffi::CStr, fmt::Debug, mem::MaybeUninit};
 use crate::{vk, Entry, Result};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct PhysicalDevice {
     inner: NonZeroU64
@@ -55,31 +55,37 @@ impl PhysicalDevice {
     }
 
     #[inline]
-    pub fn properties (&self) -> Box<Properties> {
+    pub fn id (self) -> u64 {
+        return self.inner.get()
+    }
+
+    #[inline]
+    pub fn properties (self) -> Box<Properties> {
         let mut props = Box::<Properties>::new_uninit();
         (Entry::get().get_physical_device_properties)(self.inner.get(), props.as_mut_ptr().cast());
         return unsafe { props.assume_init() }
     }
 
     #[inline]
-    pub fn family_count (&self) -> usize {
-        let mut count = 0;
-        (Entry::get().get_physical_device_queue_family_properties)(self.inner.get(), addr_of_mut!(count), core::ptr::null_mut());
-        return count as usize
+    pub fn features (self) -> Box<Features> {
+        let mut features = Box::<Features>::new_uninit();
+        (Entry::get().get_physical_device_features)(self.inner.get(), features.as_mut_ptr().cast());
+        return unsafe { features.assume_init() }
     }
 
-    #[inline]
-    pub fn families (&self) -> Vec<Family> {
+    pub fn families (self) -> impl Iterator<Item = Family> {
         let mut count = 0;
         (Entry::get().get_physical_device_queue_family_properties)(self.inner.get(), addr_of_mut!(count), core::ptr::null_mut());
         
         let mut result = Vec::with_capacity(count as usize);
         (Entry::get().get_physical_device_queue_family_properties)(self.inner.get(), addr_of_mut!(count), result.as_mut_ptr());
-
-        return unsafe {
-            result.set_len(count as usize);
-            core::mem::transmute(result)
-        }
+        unsafe { result.set_len(count as usize) }
+        
+        return result.into_iter()
+            .enumerate()
+            .map(move |(idx, inner)| 
+                Family { idx: idx as u32, inner, parent: self }
+            )
     }
 }
 
@@ -146,6 +152,11 @@ impl Properties {
         return &self.inner.limits
     }
 
+    #[inline]
+    pub fn into_raw (self) -> vk::PhysicalDeviceProperties {
+        return self.inner
+    }
+
     // TODO other
 }
 
@@ -162,13 +173,32 @@ impl Debug for Properties {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 #[repr(transparent)]
+pub struct Features {
+    inner: vk::PhysicalDeviceFeatures
+}
+
+impl Features {
+    #[inline]
+    pub fn into_raw (self) -> vk::PhysicalDeviceFeatures {
+        return self.inner
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct Family {
-    inner: vk::QueueFamilyProperties
+    inner: vk::QueueFamilyProperties,
+    parent: PhysicalDevice,
+    pub(crate) idx: u32
 }
 
 impl Family {
+    #[inline]
+    pub fn parent (self) -> PhysicalDevice {
+        return self.parent
+    }
+
     #[inline]
     pub fn queue_flags (&self) -> FamilyQueueFlags {
         #[cfg(debug_assertions)]
@@ -182,8 +212,8 @@ impl Debug for Family {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Family")
+            .field("idx", &self.idx)
             .field("queue_flags", &self.queue_flags())
-            //.field("inner", &self.inner)
             .finish_non_exhaustive()
     }
 }

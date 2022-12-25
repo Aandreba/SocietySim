@@ -1,7 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata)]
 
-use vulkan::{Entry, device::PhysicalDevice};
+use vulkan::{Entry, device::{PhysicalDevice, Device}};
 
 #[macro_export]
 macro_rules! flat_mod {
@@ -26,9 +26,11 @@ macro_rules! cstr {
 fn main () -> anyhow::Result<()> {
     let _ = unsafe { Entry::builder(1, 0, 0).build_in("/opt/homebrew/Cellar/molten-vk/1.2.1/lib/libMoltenVK.dylib") }?;
     
-    let dev = PhysicalDevice::first()?;
-    let families = dev.families()?;
-    println!("{families:#?}");
+    let phy = PhysicalDevice::first()?;
+    let (dev, queues) = Device::builder(&phy)
+        .queues(&[1f32]).build()
+        .build()?;
 
+    println!("{dev:?}\n{queues:#?}");
     Ok(())
 }
