@@ -1,10 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata)]
 
-use vulkan::{device::PhysicalDevice};
-
-use crate::vulkan::Entry;
-pub mod vulkan;
+use vulkan::{Entry, device::PhysicalDevice};
 
 #[macro_export]
 macro_rules! flat_mod {
@@ -30,8 +27,8 @@ fn main () -> anyhow::Result<()> {
     let _ = unsafe { Entry::builder(1, 0, 0).build_in("/opt/homebrew/Cellar/molten-vk/1.2.1/lib/libMoltenVK.dylib") }?;
     
     let dev = PhysicalDevice::first()?;
-    let props = dev.properties();
-    println!("{props:#?}");
+    let families = dev.families()?;
+    println!("{families:#?}");
 
     Ok(())
 }

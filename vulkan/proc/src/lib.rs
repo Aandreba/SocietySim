@@ -2,7 +2,7 @@
 
 use std::{ffi::CString, ops::Deref};
 use derive_syn_parse::Parse;
-use proc_macro2::Span;
+use proc_macro2::{Span};
 use quote::{quote, format_ident};
 use syn::{parse_macro_input, punctuated::Punctuated, Token, LitStr, LitByteStr};
 
@@ -36,6 +36,7 @@ pub fn entry (item: proc_macro::TokenStream) -> proc_macro::TokenStream {
             .intersperse("_".to_string())
             .collect::<String>()
         )
+        .map(|x| format_ident!("{x}"))
         .collect::<Vec<_>>();
 
     let lower_case = by_parts.iter()
@@ -45,6 +46,7 @@ pub fn entry (item: proc_macro::TokenStream) -> proc_macro::TokenStream {
             .intersperse("_".to_string())
             .collect::<String>()
         )
+        .map(|x| format_ident!("{x}"))
         .collect::<Vec<_>>();
 
     let fn_types = by_parts.iter()
@@ -65,13 +67,14 @@ pub fn entry (item: proc_macro::TokenStream) -> proc_macro::TokenStream {
             pub(crate) get_instance_proc_addr: libloading::os::unix::Symbol<vk::FnGetInstanceProcAddr>,
             #[cfg(windows)]
             pub(crate) get_instance_proc_addr: libloading::os::windows::Symbol<vk::FnGetInstanceProcAddr>,
+            pub(crate) create_instance: vk::FnCreateInstance,
             #(
                 pub(crate) #lower_case: vk::#fn_types
             ),*
         }
 
         impl Entry {
-            fn new (
+            unsafe fn new (
                 instance: NonZeroU64,
                 lib: Library,
                 create_instance: vk::FnCreateInstance,
@@ -102,7 +105,7 @@ fn by_parts (s: impl AsRef<str>) -> Vec<String> {
 
     for c in s[3..].chars() {
         if c.is_uppercase() {
-            result.push(core::mem::take(&mut current))
+            result.push(core::mem::replace(&mut current, String::from(c)))
         } else {
             current.push(c)
         }

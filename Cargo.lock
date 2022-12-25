@@ -308,17 +308,9 @@ name = "society-sim"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bitflags",
  "cfg-if",
  "docfg",
- "futures",
- "into_string",
- "libloading",
- "packed_simd_2",
- "rand",
- "rand_derive2",
- "thiserror",
- "vulkan-bindings",
+ "vulkan",
 ]
 
 [[package]]

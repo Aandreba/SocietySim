@@ -34,6 +34,7 @@ pub(crate) extern crate vulkan_bindings as vk;
 
 pub mod error;
 pub mod device;
+pub mod queue;
 
 //#[docfg::docfg(feature = "alloc")]
 //flat_mod! { alloc }
@@ -61,24 +62,13 @@ static mut CURRENT_ENTRY: Option<&'static Entry> = None;
 
 const ENTRY_POINT: &[u8] = b"vkGetInstanceProcAddr\0";
 const CREATE_INSTANCE: &CStr = cstr!("vkCreateInstance");
-const DESTROY_INSTANCE: &CStr = cstr!("vkDestroyInstance");
-const ENUMERATE_PHYSICAL_DEVICES: &CStr = cstr!("vkEnumeratePhysicalDevices");
-const GET_PHYSICAL_DEVICE_PROPERTIES: &CStr = cstr!("vkGetPhysicalDeviceProperties");
-const CREATE_DEVICE: &CStr = cstr!("vkCreateDevice");
 
-#[allow(unused)]
-pub struct Entry {
-    lib: Library,
-    instance: NonZeroU64,
-    #[cfg(unix)]
-    pub(crate) get_instance_proc_addr: libloading::os::unix::Symbol<vk::FnGetInstanceProcAddr>,
-    #[cfg(windows)]
-    pub(crate) get_instance_proc_addr: libloading::os::windows::Symbol<vk::FnGetInstanceProcAddr>,
-    pub(crate) create_instance: vk::FnCreateInstance,
-    pub(crate) destroy_instance: vk::FnDestroyInstance,
-    pub(crate) enumerate_physical_devices: vk::FnEnumeratePhysicalDevices,
-    pub(crate) get_physical_device_properties: vk::FnGetPhysicalDeviceProperties,
-    pub(crate) create_device: vk::FnCreateDevice,
+proc::entry! {
+    "vkDestroyInstance",
+    "vkEnumeratePhysicalDevices",
+    "vkGetPhysicalDeviceProperties",
+    "vkCreateDevice",
+    "vkGetPhysicalDeviceQueueFamilyProperties"
 }
 
 impl Entry {
@@ -88,10 +78,10 @@ impl Entry {
     }
 
     #[inline]
-    pub fn get () -> Result<&'static Self> {
+    pub fn get () -> &'static Self {
         unsafe {
             #[cfg(debug_assertions)]
-            return CURRENT_ENTRY.ok_or(Error::Vulkan(vk::ERROR_INITIALIZATION_FAILED));
+            return CURRENT_ENTRY.unwrap();
             #[cfg(not(debug_assertions))]
             return Ok(CURRENT_ENTRY.unwrap_unchecked());
         }
@@ -198,7 +188,7 @@ impl<'a> Builder<'a> {
         info.pApplicationInfo = addr_of!(self.app);
 
         let lib = Library::new(path)?;
-        let get_instance_proc_addr = lib.get::<vk::FnGetInstanceProcAddr>(ENTRY_POINT)?;
+        let get_instance_proc_addr = lib.get::<vk::FnGetInstanceProcAddr>(ENTRY_POINT)?.into_raw();
 
         let create_instance: vk::FnCreateInstance = transmute(get_instance_proc_addr(NULL_INSTANCE, CREATE_INSTANCE.as_ptr()));
         let mut instance: vk::Instance = 0;
@@ -207,17 +197,7 @@ impl<'a> Builder<'a> {
         }
 
         if let Some(instance) = NonZeroU64::new(instance) {
-            let v = Box::new(Entry {
-                lib,
-                instance,
-                create_instance,
-                destroy_instance: transmute(get_instance_proc_addr(NULL_INSTANCE, DESTROY_INSTANCE.as_ptr())),
-                enumerate_physical_devices: transmute((get_instance_proc_addr)(instance.get(), ENUMERATE_PHYSICAL_DEVICES.as_ptr())),
-                get_physical_device_properties: transmute((get_instance_proc_addr)(instance.get(), GET_PHYSICAL_DEVICE_PROPERTIES.as_ptr())),
-                create_device: transmute((get_instance_proc_addr)(instance.get(), CREATE_DEVICE.as_ptr())),
-                get_instance_proc_addr,
-            });
-
+            let v = Box::new(Entry::new(instance, lib, create_instance, get_instance_proc_addr));
             let v = Box::leak(v) as &'static Entry;
             CURRENT_ENTRY = Some(v);
             return Ok(v)
