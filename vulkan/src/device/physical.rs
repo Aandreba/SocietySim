@@ -1,7 +1,7 @@
 use std::{num::NonZeroU64, ptr::addr_of_mut, ffi::CStr, fmt::Debug, mem::MaybeUninit};
-use crate::vulkan::{vk, Entry, Result};
+use crate::{vk, Entry, Result};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct PhysicalDevice {
     inner: NonZeroU64
@@ -54,36 +54,36 @@ impl PhysicalDevice {
 
     #[inline]
     pub fn properties (&self) -> Result<Properties> {
-        let mut props = MaybeUninit::uninit();
+        let mut props = Box::new_uninit();
         (Entry::get()?.get_physical_device_properties)(self.inner.get(), props.as_mut_ptr());
         return unsafe { Ok(Properties { inner: props.assume_init() }) }
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct Properties {
-    inner: vk::PhysicalDeviceProperties
+    inner: Box<vk::PhysicalDeviceProperties>
 }
 
 impl Properties {
     #[inline]
-    pub fn api_version (self) -> (u32, u32, u32) {
+    pub fn api_version (&self) -> (u32, u32, u32) {
         return vk::get_version(self.inner.apiVersion)
     }
 
     #[inline]
-    pub fn driver_version (self) -> (u32, u32, u32) {
+    pub fn driver_version (&self) -> (u32, u32, u32) {
         vk::get_version(self.inner.driverVersion)
     }
 
     #[inline]
-    pub fn vendor_id (self) -> u32 {
+    pub fn vendor_id (&self) -> u32 {
         self.inner.vendorID
     }
     
     #[inline]
-    pub fn device_id (self) -> u32 {
+    pub fn device_id (&self) -> u32 {
         self.inner.deviceID
     }
 
@@ -101,6 +101,11 @@ impl Properties {
             vk::PHYSICAL_DEVICE_TYPE_CPU => Type::Cpu,
             vk::PHYSICAL_DEVICE_TYPE_OTHER | _ => Type::Other
         }
+    }
+
+    #[inline]
+    pub fn limits (&self) -> vk::PhysicalDeviceLimits {
+        return self.inner.limits
     }
 
     // TODO other
