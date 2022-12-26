@@ -1,79 +1,52 @@
-use std::{collections::HashMap, ffi::c_void, alloc::{Layout, Allocator}};
+use std::{alloc::Allocator, ptr::NonNull};
+use crate::{Entry, device::Device};
 
-struct VulkanAllocator<A> {
-    map: HashMap<*mut c_void, Layout>,
-    alloc: A
+pub struct Vulkan<'a> {
+    device: &'a Device,
+    cbs: Option<vk::AllocationCallbacks>
 }
 
-impl<A: Allocator> VulkanAllocator<A> {
+impl<'a> Vulkan<'a> {
+    
+}
+
+unsafe impl Allocator for Vulkan<'_> {
     #[inline]
-    pub const fn new (alloc: A) -> Self {
-        return Self {
-            map: HashMap::new(),
-            alloc
-        }
-    }
-}
+    fn allocate(&self, layout: std::alloc::Layout) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError> {
+        let cbs = match self.cbs {
+            Some(ref x) => x as *const vk::AllocationCallbacks,
+            None => core::ptr::null()
+        };
 
-pub fn vulkan_allocator<A: Allocator> (alloc: &'static VulkanAllocator<A>) -> crate::vk::AllocationCallbacks {
-    use std::{ffi::c_void, alloc::Layout};
+        let info = vk::MemoryAllocateInfo {
+            sType: todo!(),
+            pNext: core::ptr::null_mut(),
+            allocationSize: todo!(),
+            memoryTypeIndex: todo!(),
+        };
 
-    extern "system" fn alloc_fn<A: std::alloc::Allocator> (data: *mut c_void, size: usize, align: usize, _: vk::SystemAllocationScope) -> *mut c_void {
-        unsafe {
-            let this = &*(data as *const VulkanAllocator<A>);
-            #[cfg(not(debug_assertions))]
-            let layout = Layout::from_size_align_unchecked(size, align);
-            #[cfg(debug_assertions)]
-            let layout = match Layout::from_size_align(size, align) {
-                Ok(x) => x,
-                Err(e) => {
-                    eprintln!("{e}");
-                    return core::ptr::null_mut()
-                }
-            };
-
-            return match A::allocate(&this.alloc, layout) {
-                Ok(x) => x.as_ptr().cast(),
-                Err(e) => {
-                    eprintln!("{e}");
-                    core::ptr::null_mut()
-                }
-            };
-        }
+        let alloc = (Entry::get().allocate_memory)();
     }
 
-    extern "system" fn free_fn<A: std::alloc::Allocator> (data: *mut c_void, ptr: *mut c_void) {
-        unsafe {
-            let this = &*(data as *const VulkanAllocator<A>);
-        }
-
+    unsafe fn deallocate(&self, ptr: std::ptr::NonNull<u8>, layout: std::alloc::Layout) {
         todo!()
     }
 
-    extern "system" fn realloc_fn<A: std::alloc::Allocator> (data: *mut c_void, ptr: *mut c_void, size: usize, align: usize, _: vk::SystemAllocationScope) -> *mut c_void {
-        unsafe {
-            let this = &*(data as *const A);
-            #[cfg(not(debug_assertions))]
-            let layout = Layout::from_size_align_unchecked(size, align);
-            #[cfg(debug_assertions)]
-            let layout = match Layout::from_size_align(size, align) {
-                Ok(x) => x,
-                Err(e) => {
-                    eprintln!("{e}");
-                    return core::ptr::null_mut()
-                }
-            };
-
-            A::grow(&self, ptr, old_layout, new_layout)
-        }
+    unsafe fn grow(
+            &self,
+            ptr: NonNull<u8>,
+            old_layout: std::alloc::Layout,
+            new_layout: std::alloc::Layout,
+        ) -> Result<NonNull<[u8]>, std::alloc::AllocError> {
+        todo!()
     }
 
-    return crate::vk::AllocationCallbacks {
-        pUserData: alloc as *const VulkanAllocator<A> as *mut c_void,
-        pfnAllocation: alloc_fn::<A>,
-        pfnReallocation: todo!(),
-        pfnFree: free_fn::<A>,
-        pfnInternalAllocation: todo!(),
-        pfnInternalFree: todo!()
+    unsafe fn shrink(
+            &self,
+            ptr: NonNull<u8>,
+            old_layout: std::alloc::Layout,
+            new_layout: std::alloc::Layout,
+        ) -> Result<NonNull<[u8]>, std::alloc::AllocError> {
+        todo!()
     }
 }

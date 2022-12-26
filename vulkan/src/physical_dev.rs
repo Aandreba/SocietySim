@@ -188,15 +188,20 @@ impl Features {
 
 #[derive(Clone, Copy)]
 pub struct Family {
+    pub(crate) idx: u32,
     inner: vk::QueueFamilyProperties,
     parent: PhysicalDevice,
-    pub(crate) idx: u32
 }
 
 impl Family {
     #[inline]
     pub fn parent (self) -> PhysicalDevice {
         return self.parent
+    }
+
+    #[inline]
+    pub fn idx (self) -> u32 {
+        return self.idx
     }
 
     #[inline]

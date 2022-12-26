@@ -1,6 +1,6 @@
-use std::num::NonZeroU64;
+use std::{num::NonZeroU64};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Queue {
     pub(crate) inner: NonZeroU64
 }

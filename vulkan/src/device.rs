@@ -1,17 +1,33 @@
-use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}};
-use crate::{Result, Entry, queue::{Queue}};
-use super::{PhysicalDevice, Family};
+use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}, mem::MaybeUninit};
+use vk::DeviceSize;
 
-#[derive(Debug)]
-#[repr(transparent)]
+use crate::{Result, Entry, queue::{Queue}, physical_dev::{PhysicalDevice, Family}, buffer::{Buffer, UsageFlags, BufferFlags}};
+
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Device {
-    inner: NonZeroU64
+    inner: NonZeroU64,
+    parent: PhysicalDevice
 }
 
 impl Device {
     #[inline]
-    pub fn builder<'a> (parent: &'a PhysicalDevice) -> Builder<'a> {
+    pub fn builder<'a> (parent: PhysicalDevice) -> Builder<'a> {
         return Builder::new(parent)
+    }
+
+    #[inline]
+    pub fn id (&self) -> u64 {
+        return self.inner.get()
+    }
+
+    #[inline]
+    pub fn physical (&self) -> PhysicalDevice {
+        return self.parent
+    }
+
+    #[inline]
+    pub fn create_buffer_uninit<T> (&self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags) -> Result<Buffer<'_, MaybeUninit<T>>> {
+        return Buffer::new_uninit(self, capacity, usage, flags)
     }
 }
 
@@ -24,12 +40,12 @@ impl Drop for Device {
 
 pub struct Builder<'a> {
     inner: vk::DeviceCreateInfo,
-    parent: &'a PhysicalDevice,
+    parent: PhysicalDevice,
     _phtm: PhantomData<&'a vk::PhysicalDeviceFeatures>
 }
 
 impl<'a> Builder<'a> {
-    pub fn new (parent: &'a PhysicalDevice) -> Self {
+    pub fn new (parent: PhysicalDevice) -> Self {
         return Self {
             inner: vk::DeviceCreateInfo {
                 sType: vk::STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -85,7 +101,7 @@ impl<'a> Builder<'a> {
                 }
             }
 
-            return Ok((Device { inner }, queues))
+            return Ok((Device { inner, parent: self.parent }, queues))
         }
         return Err(vk::ERROR_INITIALIZATION_FAILED.into())
     }
@@ -136,18 +152,12 @@ impl<'a> QueueBuilder<'a> {
 
     #[inline]
     pub fn family (mut self, family: &Family) -> Result<Self> {
-        if &family.parent() != self.parent.parent {
+        if family.parent() != self.parent.parent {
             return Err(vk::ERROR_UNKNOWN.into())
         }
 
         self.inner.queueFamilyIndex = family.idx;
         return Ok(self)
-    }
-
-    #[inline]
-    pub fn flags (mut self, flags: LogicalQueueFlags) -> Self {
-        self.inner.flags = flags.bits();
-        self
     }
 
     #[inline]
@@ -167,12 +177,5 @@ impl<'a> QueueBuilder<'a> {
             let _ = unsafe { Box::from_raw(prev.cast_mut()) };
         }
         self.parent
-    }
-}
-
-bitflags::bitflags! {
-    #[repr(transparent)]
-    pub struct LogicalQueueFlags: vk::DeviceQueueCreateFlags {
-        const PROTECTED = vk::DEVICE_QUEUE_CREATE_PROTECTED_BIT;
     }
 }

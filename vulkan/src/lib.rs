@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "alloc", feature(allocator_api))]
-#![feature(ptr_metadata, new_uninit)]
+#![feature(ptr_metadata, new_uninit, trait_alias)]
 
 //! https://vulkan-tutorial.com/
 
@@ -33,10 +33,11 @@ macro_rules! cstr {
 pub(crate) extern crate vulkan_bindings as vk;
 
 pub mod error;
+pub mod physical_dev;
 pub mod device;
 pub mod queue;
-
-//#[docfg::docfg(feature = "alloc")]
+pub mod shader;
+pub mod buffer;
 //flat_mod! { alloc }
 
 pub type Result<T> = ::core::result::Result<T, error::Error>;
@@ -44,7 +45,6 @@ pub type Result<T> = ::core::result::Result<T, error::Error>;
 use std::{marker::{PhantomData}, ffi::{CStr, OsStr, c_char}, ptr::{addr_of, addr_of_mut}, mem::transmute, num::NonZeroU64, fmt::Debug};
 use libloading::{Library};
 use vulkan_bindings::make_version;
-use self::error::Error;
 
 #[cfg(windows)]
 const LIB_PATH: &str = "vulkan-1.dll";
@@ -58,20 +58,31 @@ const LIB_PATH: &str = "libvulkan.so";
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 const LIB_PATH: &str = "libvulkan.dylib";
 
-static mut CURRENT_ENTRY: Option<&'static Entry> = None;
+static mut CURRENT_ENTRY: Option<Entry> = None;
 
 const ENTRY_POINT: &[u8] = b"vkGetInstanceProcAddr\0";
 const CREATE_INSTANCE: &CStr = cstr!("vkCreateInstance");
 
 proc::entry! {
-    "vkDestroyInstance",
     "vkEnumeratePhysicalDevices",
     "vkGetPhysicalDeviceProperties",
     "vkCreateDevice",
     "vkGetPhysicalDeviceQueueFamilyProperties",
     "vkGetPhysicalDeviceFeatures",
+    "vkGetDeviceQueue",
+    "vkCreateShaderModule",
+    "vkCreateBuffer",
+    "vkGetBufferMemoryRequirements",
+    "vkGetPhysicalDeviceMemoryProperties",
+    "vkAllocateMemory",
+    "vkMapMemory",
+    "vkUnmapMemory",
+    "vkBindBufferMemory",
+    // Destructors
+    "vkDestroyInstance",
     "vkDestroyDevice",
-    "vkGetDeviceQueue"
+    "vkDestroyShaderModule",
+    "vkDestroyBuffer"
 }
 
 impl Entry {
@@ -84,9 +95,9 @@ impl Entry {
     pub fn get () -> &'static Self {
         unsafe {
             #[cfg(debug_assertions)]
-            return CURRENT_ENTRY.unwrap();
+            return CURRENT_ENTRY.as_ref().unwrap();
             #[cfg(not(debug_assertions))]
-            return Ok(CURRENT_ENTRY.unwrap_unchecked());
+            return Ok(CURRENT_ENTRY.as_ref().unwrap_unchecked());
         }
     }
 }
@@ -200,10 +211,8 @@ impl<'a> Builder<'a> {
         }
 
         if let Some(instance) = NonZeroU64::new(instance) {
-            let v = Box::new(Entry::new(instance, lib, create_instance, get_instance_proc_addr));
-            let v = Box::leak(v) as &'static Entry;
-            CURRENT_ENTRY = Some(v);
-            return Ok(v)
+            CURRENT_ENTRY = Some(Entry::new(instance, lib, create_instance, get_instance_proc_addr));
+            return Ok(Entry::get())
         }
 
         return Err(vk::ERROR_INITIALIZATION_FAILED.into())

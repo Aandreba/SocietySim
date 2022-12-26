@@ -1,7 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata)]
 
-use vulkan::{Entry, device::{PhysicalDevice, Device}};
+use vulkan::{Entry, device::{Device}, buffer::{UsageFlags, BufferFlags}, physical_dev::PhysicalDevice};
 
 #[macro_export]
 macro_rules! flat_mod {
@@ -27,10 +27,16 @@ fn main () -> anyhow::Result<()> {
     let _ = unsafe { Entry::builder(1, 0, 0).build_in("/opt/homebrew/Cellar/molten-vk/1.2.1/lib/libMoltenVK.dylib") }?;
     
     let phy = PhysicalDevice::first()?;
-    let (dev, queues) = Device::builder(&phy)
+    let (dev, _) = Device::builder(&phy)
         .queues(&[1f32]).build()
         .build()?;
 
-    println!("{dev:?}\n{queues:#?}");
+    let buffer = dev.create_buffer_uninit::<f32>(
+        5,
+        UsageFlags::STORAGE_BUFFER,
+        BufferFlags::empty()
+    )?;
+    
+    println!("{buffer:#?}");
     Ok(())
 }
