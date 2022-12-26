@@ -1,7 +1,6 @@
 use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}, mem::MaybeUninit};
 use vk::DeviceSize;
-
-use crate::{Result, Entry, queue::{Queue}, physical_dev::{PhysicalDevice, Family}, buffer::{Buffer, UsageFlags, BufferFlags}};
+use crate::{Result, Entry, queue::{Queue}, physical_dev::{PhysicalDevice, Family}, buffer::{Buffer, UsageFlags, BufferFlags}, alloc::{MemoryFlags, DeviceAllocator}};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Device {
@@ -26,8 +25,8 @@ impl Device {
     }
 
     #[inline]
-    pub fn create_buffer_uninit<T> (&self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags) -> Result<Buffer<'_, MaybeUninit<T>>> {
-        return Buffer::new_uninit(self, capacity, usage, flags)
+    pub async fn create_buffer_uninit<'a, T, A: 'a + DeviceAllocator> (&'a self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<'_, MaybeUninit<T>, A>> {
+        return Buffer::new_uninit(self, capacity, usage, flags, memory_flags, alloc).await
     }
 }
 

@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "alloc", feature(allocator_api))]
-#![feature(ptr_metadata, new_uninit, trait_alias)]
+#![feature(is_some_and, type_alias_impl_trait, ptr_metadata, new_uninit, trait_alias)]
 
 //! https://vulkan-tutorial.com/
 
@@ -38,6 +38,9 @@ pub mod device;
 pub mod queue;
 pub mod shader;
 pub mod buffer;
+pub mod alloc;
+pub mod utils;
+
 //flat_mod! { alloc }
 
 pub type Result<T> = ::core::result::Result<T, error::Error>;
@@ -82,7 +85,8 @@ proc::entry! {
     "vkDestroyInstance",
     "vkDestroyDevice",
     "vkDestroyShaderModule",
-    "vkDestroyBuffer"
+    "vkDestroyBuffer",
+    "vkFreeMemory"
 }
 
 impl Entry {
