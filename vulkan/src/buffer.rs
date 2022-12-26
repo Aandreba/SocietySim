@@ -32,6 +32,11 @@ impl<'a, T, A: DeviceAllocator> Buffer<'a, T, A> {
 
         if let Some(buffer) = NonZeroU64::new(inner) {
             let memory = alloc.allocate(parent, Self::BYTES_PER_ELEMENT * capacity, core::mem::align_of::<T>() as DeviceSize, memory_flags).await?;
+            
+            tri! {
+                (entry.bind_buffer_memory)(parent.id(), buffer.get(), memory.id(), memory.offset())
+            };
+
             return Ok(Buffer { buffer, memory: ManuallyDrop::new(memory), alloc, _phtm: PhantomData })
         }
 
@@ -41,6 +46,19 @@ impl<'a, T, A: DeviceAllocator> Buffer<'a, T, A> {
     #[inline]
     pub fn id (&self) -> u64 {
         return self.buffer.get()
+    }
+
+    #[inline]
+    pub fn size (&self) -> u64 {
+        let mut requirements = MaybeUninit::uninit();
+        (Entry::get().get_buffer_memory_requirements)(self.device().id(), self.buffer.get(), requirements.as_mut_ptr());
+        let requirements = unsafe { requirements.assume_init() };
+        return requirements.size
+    }
+
+    #[inline]
+    pub fn len (&self) -> u64 {
+        return self.size() / Self::BYTES_PER_ELEMENT
     }
 
     #[inline]
@@ -117,6 +135,15 @@ impl<T, A: DeviceAllocator> Drop for Buffer<'_, T, A> {
 pub struct MapGuard<'a, 'b, T, A: DeviceAllocator> {
     ptr: NonNull<[T]>,
     buffer: &'b mut Buffer<'a, T, A>,
+}
+
+impl<T, A: DeviceAllocator> MapGuard<'_, '_, MaybeUninit<T>, A> {
+    #[inline]
+    pub fn init_from_slice (&mut self, slice: &[T]) where T: Copy {
+        unsafe {
+            self.copy_from_slice(&*(slice as *const [T] as *const [MaybeUninit<T>]));
+        }
+    }
 }
 
 impl<T, A: DeviceAllocator> Deref for MapGuard<'_, '_, T, A> {

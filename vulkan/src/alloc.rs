@@ -3,6 +3,10 @@ use futures::{Future};
 use vk::MemoryType;
 use crate::{Entry, Result, device::Device};
 
+pub trait MemoryMetadata {
+    fn offset (&self) -> vk::DeviceSize;
+}
+
 #[derive(Debug)]
 pub struct MemoryPtr<'a, A: ?Sized + DeviceAllocator> {
     inner: NonZeroU64,
@@ -21,6 +25,11 @@ impl<'a, A: ?Sized + DeviceAllocator> MemoryPtr<'a, A> {
             _phtm: PhantomData,
         }
     }
+
+    #[inline]
+    pub fn offset (&self) -> vk::DeviceSize {
+        return self._meta.offset()
+    }
 }
 
 impl<A: ?Sized + DeviceAllocator> MemoryPtr<'_, A> {
@@ -36,7 +45,7 @@ impl<A: ?Sized + DeviceAllocator> MemoryPtr<'_, A> {
 }
 
 pub unsafe trait DeviceAllocator {
-    type Metadata;
+    type Metadata: MemoryMetadata;
     type Allocate<'a, 'b>: 'a + Future<Output = Result<MemoryPtr<'a, Self>>> where Self: 'b;
 
     fn allocate<'a, 'b> (&'b self, device: &'a Device, size: vk::DeviceSize, align: vk::DeviceSize, flags: MemoryFlags) -> Self::Allocate<'a, 'b>;
@@ -122,5 +131,12 @@ impl Default for MemoryFlags {
     #[inline]
     fn default() -> Self {
         Self::DEVICE_LOCAL
+    }
+}
+
+impl MemoryMetadata for () {
+    #[inline]
+    fn offset (&self) -> vk::DeviceSize {
+        0
     }
 }

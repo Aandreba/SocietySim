@@ -28,6 +28,11 @@ impl Device {
     pub async fn create_buffer_uninit<'a, T, A: 'a + DeviceAllocator> (&'a self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<'_, MaybeUninit<T>, A>> {
         return Buffer::new_uninit(self, capacity, usage, flags, memory_flags, alloc).await
     }
+
+    #[inline]
+    pub async fn create_buffer <'a, T, A: 'a + DeviceAllocator> (&'a self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<'_, MaybeUninit<T>, A>> {
+        return Buffer::new_uninit(self, capacity, usage, flags, memory_flags, alloc).await
+    }
 }
 
 impl Drop for Device {

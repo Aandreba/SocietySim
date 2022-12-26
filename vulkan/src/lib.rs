@@ -5,11 +5,13 @@
 //! https://vulkan-tutorial.com/
 
 macro_rules! tri {
-    ($e:expr) => {
-        match $e {
-            $crate::vk::SUCCESS => {},
-            e => return Err(Into::into(e))
-        }
+    ($($e:expr);+) => {
+        $(
+            match $e {
+                $crate::vk::SUCCESS => {},
+                e => return Err(Into::into(e))
+            }
+        )+
     };
 }
 
@@ -40,6 +42,7 @@ pub mod shader;
 pub mod buffer;
 pub mod alloc;
 pub mod utils;
+pub mod pipeline;
 
 //flat_mod! { alloc }
 
@@ -81,12 +84,16 @@ proc::entry! {
     "vkMapMemory",
     "vkUnmapMemory",
     "vkBindBufferMemory",
+    "vkCreateDescriptorSetLayout",
+    "vkCreatePipelineLayout",
+    "vkCreatePipelineCache",
     // Destructors
     "vkDestroyInstance",
     "vkDestroyDevice",
     "vkDestroyShaderModule",
     "vkDestroyBuffer",
-    "vkFreeMemory"
+    "vkDestroyDescriptorSetLayout",
+    "vkFreeMemory",
 }
 
 impl Entry {

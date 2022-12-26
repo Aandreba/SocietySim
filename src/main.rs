@@ -1,9 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata)]
 
-use std::mem::MaybeUninit;
-
-use vulkan::{Entry, device::{Device}, buffer::{UsageFlags, BufferFlags}, physical_dev::PhysicalDevice, alloc::{MemoryFlags, Raw}};
+use vulkan::{Entry, device::{Device}, buffer::{UsageFlags, BufferFlags}, physical_dev::PhysicalDevice, alloc::{MemoryFlags, Raw}, shader::Module};
 
 #[macro_export]
 macro_rules! flat_mod {
@@ -34,7 +32,7 @@ async fn main () -> anyhow::Result<()> {
         .queues(&[1f32]).build()
         .build()?;
 
-    let mut buffer = dev.create_buffer_uninit::<f32, _>(
+    let mut lhs = dev.create_buffer_uninit::<u32, _>(
         5,
         UsageFlags::STORAGE_BUFFER,
         BufferFlags::empty(),
@@ -42,16 +40,22 @@ async fn main () -> anyhow::Result<()> {
         Raw
     ).await?;
 
-    let mut map = buffer.map(..)?;
-    for (i, v) in map.iter_mut().enumerate() {
-        v.write(i as f32);
-    }
+    let mut rhs = dev.create_buffer_uninit::<u32, _>(
+        5,
+        UsageFlags::STORAGE_BUFFER,
+        BufferFlags::empty(),
+        MemoryFlags::MAPABLE,
+        Raw
+    ).await?;
 
-    drop(map);
-    let mut buffer = unsafe { buffer.assume_init() };
-    let map = buffer.map(..)?;
-    println!("{:#?}", &map as &[f32]);
+    lhs.map(..)?.init_from_slice(&[1, 2, 3, 4, 5]);
+    rhs.map(..)?.init_from_slice(&[6, 7, 8, 9, 10]);
 
+    let lhs = unsafe { lhs.assume_init() };
+    let rhs = unsafe { rhs.assume_init() };
+    
+    let shader = Module::from_bytes(&dev, include_bytes!("../target/main.spv"))?;
+    println!("{shader:#?}");
 
     Ok(())
 }
