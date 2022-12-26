@@ -25,11 +25,11 @@ macro_rules! flat_mod {
 }
 
 macro_rules! cstr {
-    ($l:literal) => {unsafe {
+    ($l:literal) => {
         core::ffi::CStr::from_bytes_with_nul_unchecked(
             concat!($l, "\0").as_bytes()
         )
-    }};
+    };
 }
 
 pub(crate) extern crate vulkan_bindings as vk;
@@ -67,7 +67,7 @@ const LIB_PATH: &str = "libvulkan.dylib";
 static mut CURRENT_ENTRY: Option<Entry> = None;
 
 const ENTRY_POINT: &[u8] = b"vkGetInstanceProcAddr\0";
-const CREATE_INSTANCE: &CStr = cstr!("vkCreateInstance");
+const CREATE_INSTANCE: &CStr = unsafe { cstr!("vkCreateInstance") };
 
 proc::entry! {
     "vkEnumeratePhysicalDevices",
@@ -87,12 +87,16 @@ proc::entry! {
     "vkCreateDescriptorSetLayout",
     "vkCreatePipelineLayout",
     "vkCreatePipelineCache",
+    "vkCreateComputePipelines",
     // Destructors
     "vkDestroyInstance",
     "vkDestroyDevice",
     "vkDestroyShaderModule",
     "vkDestroyBuffer",
     "vkDestroyDescriptorSetLayout",
+    "vkDestroyPipelineLayout",
+    "vkDestroyPipelineCache",
+    "vkDestroyPipeline",
     "vkFreeMemory",
 }
 

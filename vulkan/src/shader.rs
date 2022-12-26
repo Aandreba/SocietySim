@@ -1,12 +1,18 @@
 use std::{ptr::{addr_of, addr_of_mut}, num::NonZeroU64};
 use crate::{Result, Entry, device::Device};
 
+#[derive(Debug)]
 pub struct Shader<'a> {
-    module: Module<'a>,
+    pub(crate) module: Module<'a>,
     pub(crate) layout: NonZeroU64
 }
 
 impl<'a> Shader<'a> {
+    #[inline]
+    pub fn builder (device: &'a Device) -> Builder<'a> {
+        return Builder::new(device)
+    }
+
     #[inline]
     pub fn module (&self) -> &Module<'a> {
         return &self.module
@@ -85,7 +91,7 @@ impl<'a> Builder<'a> {
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Module<'a> {
     inner: NonZeroU64,
-    device: &'a Device
+    pub(crate) device: &'a Device
 }
 
 impl<'a> Module<'a> {

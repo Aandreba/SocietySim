@@ -1,7 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata)]
 
-use vulkan::{Entry, device::{Device}, buffer::{UsageFlags, BufferFlags}, physical_dev::PhysicalDevice, alloc::{MemoryFlags, Raw}, shader::Module};
+use vulkan::{Entry, device::{Device}, buffer::{UsageFlags, BufferFlags}, physical_dev::PhysicalDevice, alloc::{MemoryFlags, Raw}, shader::{Module, Shader, BindingType, StageFlags}, pipeline::Pipeline};
 
 #[macro_export]
 macro_rules! flat_mod {
@@ -31,31 +31,15 @@ async fn main () -> anyhow::Result<()> {
     let (dev, _) = Device::builder(phy)
         .queues(&[1f32]).build()
         .build()?;
-
-    let mut lhs = dev.create_buffer_uninit::<u32, _>(
-        5,
-        UsageFlags::STORAGE_BUFFER,
-        BufferFlags::empty(),
-        MemoryFlags::MAPABLE,
-        Raw
-    ).await?;
-
-    let mut rhs = dev.create_buffer_uninit::<u32, _>(
-        5,
-        UsageFlags::STORAGE_BUFFER,
-        BufferFlags::empty(),
-        MemoryFlags::MAPABLE,
-        Raw
-    ).await?;
-
-    lhs.map(..)?.init_from_slice(&[1, 2, 3, 4, 5]);
-    rhs.map(..)?.init_from_slice(&[6, 7, 8, 9, 10]);
-
-    let lhs = unsafe { lhs.assume_init() };
-    let rhs = unsafe { rhs.assume_init() };
     
-    let shader = Module::from_bytes(&dev, include_bytes!("../target/main.spv"))?;
-    println!("{shader:#?}");
+    let shader = Shader::builder(&dev)
+        .binding(BindingType::StorageBuffer, 1, StageFlags::COMPUTE)
+        .binding(BindingType::StorageBuffer, 1, StageFlags::COMPUTE)
+    .build(include_bytes!("../target/main.spv"))?;
+
+    let pipeline = Pipeline::compute(&shader, cstr!("main")).build_compute()?;
+
+    println!("{pipeline:#?}");
 
     Ok(())
 }
