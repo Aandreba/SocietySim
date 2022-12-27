@@ -1,58 +1,80 @@
-use std::{ptr::{addr_of, addr_of_mut}, num::NonZeroU64};
-use crate::{Result, Entry, device::Device};
+use std::{ptr::{addr_of, addr_of_mut}, num::NonZeroU64, ffi::CStr, marker::PhantomData};
+use crate::{Result, Entry, device::Device, utils::usize_to_u32, descriptor::DescriptorType};
 
-#[derive(Debug)]
+const DEFAULT_ENTRY: &CStr = unsafe { cstr!("main") };
+
+//#[derive(PartialEq, Eq, Hash)]
 pub struct Shader<'a> {
-    pub(crate) module: Module<'a>,
-    pub(crate) layout: NonZeroU64
+    module: NonZeroU64,
+    layout: NonZeroU64,
+    device: &'a Device,
+    _phtm: PhantomData<&'a CStr>
 }
 
 impl<'a> Shader<'a> {
     #[inline]
-    pub fn builder (device: &'a Device) -> Builder<'a> {
-        return Builder::new(device)
+    pub fn builder (device: &'a Device, stage: ShaderStage) -> Builder<'a> {
+        return Builder::new(device, stage);
     }
 
     #[inline]
-    pub fn module (&self) -> &Module<'a> {
-        return &self.module
+    pub fn module (&self) -> u64 {
+        return self.module.get()
+    }
+
+    #[inline]
+    pub fn layout (&self) -> u64 {
+        return self.layout.get()
     }
 
     #[inline]
     pub fn device (&self) -> &Device {
-        return self.module.device
+        return self.device
     }
 }
 
 impl Drop for Shader<'_> {
     #[inline]
     fn drop(&mut self) {
-        (Entry::get().destroy_descriptor_set_layout)(self.device().id(), self.layout.get(), core::ptr::null());
+        let entry = Entry::get();
+        (entry.destroy_shader_module)(self.device().id(), self.module.get(), core::ptr::null());
+        (entry.destroy_descriptor_set_layout)(self.device().id(), self.layout.get(), core::ptr::null());
     }
 }
 
 pub struct Builder<'a> {
-    bindings: Vec<vk::DescriptorSetLayoutBinding>,
-    flags: LayoutCreateFlags,
-    device: &'a Device
+    pub(crate) bindings: Vec<vk::DescriptorSetLayoutBinding>,
+    pub(crate) flags: LayoutCreateFlags,
+    pub(crate) stage: ShaderStage,
+    pub(crate) device: &'a Device,
+    pub(crate) entry: &'a CStr
 }
 
 impl<'a> Builder<'a> {
     #[inline]
-    pub fn new (device: &'a Device) -> Self {
+    pub fn new (device: &'a Device, stage: ShaderStage) -> Self {
         return Self {
             bindings: Vec::new(),
             flags: LayoutCreateFlags::empty(),
+            entry: DEFAULT_ENTRY,
+            stage,
             device
         }
     }
+
+    #[inline]
+    pub fn entry (mut self, entry: &'a CStr) -> Self {
+        self.entry = entry;
+        self
+    }
     
-    pub fn binding (mut self, ty: BindingType, count: u32, stage: StageFlags) -> Self {
+    pub fn binding (mut self, ty: DescriptorType, count: u32) -> Self {
+        // Add binding
         let info = vk::DescriptorSetLayoutBinding {
-            binding: u32::try_from(self.bindings.len()).unwrap(),
+            binding: usize_to_u32(self.bindings.len()),
             descriptorType: ty as vk::DescriptorType,
             descriptorCount: count,
-            stageFlags: stage.bits,
+            stageFlags: self.stage.bits(),
             pImmutableSamplers: core::ptr::null(),
         };
         self.bindings.push(info);
@@ -65,99 +87,62 @@ impl<'a> Builder<'a> {
         self
     }
 
-    pub fn build (self, bytes: &[u8]) -> Result<Shader<'a>> {
+    pub fn build (mut self, words: &[u32]) -> Result<Shader<'a>> {
+        let entry = Entry::get();
         let info = vk::DescriptorSetLayoutCreateInfo {
             sType: vk::STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
             pNext: core::ptr::null(),
             flags: self.flags.bits(),
-            bindingCount: u32::try_from(self.bindings.len()).unwrap(),
+            bindingCount: usize_to_u32(self.bindings.len()),
             pBindings: self.bindings.as_ptr(),
         };
 
-        let mut layout: vk::DescriptorSetLayout = 0;
+        let mut layout = 0;
         tri! {
-            (Entry::get().create_descriptor_set_layout)(self.device.id(), addr_of!(info), core::ptr::null(), addr_of_mut!(layout))
+            (entry.create_descriptor_set_layout)(self.device.id(), addr_of!(info), core::ptr::null(), addr_of_mut!(layout))
         }
 
         if let Some(layout) = NonZeroU64::new(layout) {
-            let module = Module::from_bytes(self.device, bytes)?;
-            return Ok(Shader { module, layout })
+            let module = match self.build_module(entry, self.device, words) {
+                Ok(x) => x,
+                Err(e) => {
+                    (Entry::get().destroy_descriptor_set_layout)(self.device.id(), layout.get(), core::ptr::null());
+                    return Err(e)
+                }
+            };
+
+            return Ok(Shader {
+                module,
+                layout,
+                device: self.device,
+                _phtm: PhantomData
+            })
         }
 
         return Err(vk::ERROR_UNKNOWN.into())
     }
-}
 
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub struct Module<'a> {
-    inner: NonZeroU64,
-    pub(crate) device: &'a Device
-}
-
-impl<'a> Module<'a> {
-    #[inline]
-    pub fn from_bytes (device: &'a Device, b: &[u8]) -> Result<Self> {
+    fn build_module (&mut self, entry: &Entry, device: &'a Device, words: &[u32]) -> Result<NonZeroU64> {
         let module_info = vk::ShaderModuleCreateInfo {
             sType: vk::STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
             pNext: core::ptr::null_mut(),
             flags: 0,
-            codeSize: b.len(),
-            pCode: b.as_ptr().cast(),
+            codeSize: words.len() * core::mem::size_of::<u32>(),
+            pCode: words.as_ptr().cast(),
         };
 
         let mut module = 0;
         tri! {
-            (Entry::get().create_shader_module)(device.id(), addr_of!(module_info), core::ptr::null(), addr_of_mut!(module))
+            (entry.create_shader_module)(device.id(), addr_of!(module_info), core::ptr::null(), addr_of_mut!(module))
         };
 
-        if let Some(inner) = NonZeroU64::new(module) {
-            return Ok(Self { inner, device })
-        }
-        return Err(vk::ERROR_INITIALIZATION_FAILED.into())
+        return NonZeroU64::new(module).ok_or(vk::ERROR_INITIALIZATION_FAILED.into());
     }
-
-    #[inline]
-    pub fn id (&self) -> u64 {
-        return self.inner.get()
-    }
-
-    #[inline]
-    pub fn device (&self) -> &Device {
-        return self.device
-    }
-}
-
-impl Drop for Module<'_> {
-    #[inline]
-    fn drop(&mut self) {
-        (Entry::get().destroy_shader_module)(self.device.id(), self.inner.get(), core::ptr::null())
-    }
-}
-
-#[repr(i32)]
-pub enum BindingType {
-    Sampler = vk::DESCRIPTOR_TYPE_SAMPLER,
-    CombinedImageSampler = vk::DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-    SampledImage = vk::DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-    StorageImage = vk::DESCRIPTOR_TYPE_STORAGE_IMAGE,
-    UniformTexelBuffer = vk::DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
-    StorageTexelBuffer = vk::DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER,
-    UniformBuffer = vk::DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-    StorageBuffer = vk::DESCRIPTOR_TYPE_STORAGE_BUFFER,
-    UniformBufferDynamic = vk::DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-    StorageBufferDynamic = vk::DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
-    InputAttachment = vk::DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
-    InlineUniformBlock = vk::DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK,
-    AccelerationStructureKhr = vk::DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-    AccelerationStructureNv = vk::DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV,
-    MutableValve = vk::DESCRIPTOR_TYPE_MUTABLE_VALVE,
-    SampleWeightImageQcom = vk::DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM,
-    BlockMatchImageQcom = vk::DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM
 }
 
 bitflags::bitflags! {
     #[repr(transparent)]
-    pub struct StageFlags: vk::ShaderStageFlagBits {
+    pub struct ShaderStage: vk::ShaderStageFlagBits {
         const VERTEX = vk::SHADER_STAGE_VERTEX_BIT;
         const TESSELLATION_CONTROL = vk::SHADER_STAGE_TESSELLATION_CONTROL_BIT;
         const TESSELLATION_EVALUATION = vk::SHADER_STAGE_TESSELLATION_EVALUATION_BIT;

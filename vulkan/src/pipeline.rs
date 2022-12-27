@@ -1,50 +1,69 @@
-use std::{marker::PhantomData, num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ffi::CStr};
-use crate::{shader::{Shader, StageFlags}, Entry, Result, device::Device};
+use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ffi::CStr};
+use crate::{shader::{LayoutCreateFlags, ShaderStage, Shader}, Entry, Result, device::Device, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSet}};
 
-pub struct ComputeBuilder<'a, 'b> {
-    flags: PipelineFlags,
-    layout_flags: PipelineLayoutFlags,
+const DEFAULT_ENTRY: &CStr = unsafe { cstr!("main") };
+
+pub struct ComputeBuilder<'a> {
+    pipe_flags: PipelineFlags,
+    pipe_layout_flags: PipelineLayoutFlags,
     cache_flags: Option<PipelineCacheFlags>,
-    shader: &'b Shader<'a>,
-    stage: vk::PipelineShaderStageCreateInfo,
-    _phtm: PhantomData<&'b CStr>
+    layout_flags: LayoutCreateFlags,
+    bindings: Vec<vk::DescriptorSetLayoutBinding>,
+    pool_sizes: Vec<vk::DescriptorPoolSize>,
+    device: &'a Device,
+    entry: &'a CStr
 }
 
-impl<'a, 'b> ComputeBuilder<'a, 'b> {
+impl<'a> ComputeBuilder<'a> {
     #[inline]
-    pub fn new (shader: &'b Shader<'a>, entry: &'b CStr) -> Self {
+    pub fn new (device: &'a Device, entry: &'a CStr) -> Self {
         return Self {
-            flags: PipelineFlags::empty(),
-            layout_flags: PipelineLayoutFlags::empty(),
+            pipe_flags: PipelineFlags::empty(),
+            pipe_layout_flags: PipelineLayoutFlags::empty(),
+            layout_flags: LayoutCreateFlags::empty(),
             cache_flags: None,
-            stage: vk::PipelineShaderStageCreateInfo {
-                sType: vk::STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                pNext: core::ptr::null(),
-                flags: 0,
-                stage: StageFlags::COMPUTE.bits(),
-                module: shader.module().id(),
-                pName: entry.as_ptr(),
-                pSpecializationInfo: core::ptr::null(), // todo
-            },
-            shader,
-            _phtm: PhantomData,
+            bindings: Vec::new(),
+            pool_sizes: Vec::new(),
+            entry: DEFAULT_ENTRY,
+            device,
         }
     }
 
     #[inline]
-    fn device (&self) -> &Device {
-        return self.shader.device()
+    pub fn binding (mut self, ty: DescriptorType, len: u32) -> Self {
+        let mut done = false;
+        for size in self.pool_sizes.iter_mut() {
+            if size.typ == ty as vk::DescriptorType {
+                size.descriptorCount += 1;
+                done = true;
+                break;
+            }
+        };
+
+        if !done {
+            self.pool_sizes.push(vk::DescriptorPoolSize { typ: ty as vk::DescriptorType, descriptorCount: 1  });
+        }
+
+        self.bindings.push(vk::DescriptorSetLayoutBinding {
+            binding: usize_to_u32(self.bindings.len()),
+            descriptorType: ty as vk::DescriptorType,
+            descriptorCount: len,
+            stageFlags: vk::SHADER_STAGE_COMPUTE_BIT,
+            pImmutableSamplers: core::ptr::null(),
+        });
+
+        self
     }
     
     #[inline]
     pub fn flags (mut self, flags: PipelineFlags) -> Self {
-        self.flags = flags;
+        self.pipe_flags = flags;
         self
     }
     
     #[inline]
     pub fn layout_flags (mut self, flags: PipelineLayoutFlags) -> Self {
-        self.layout_flags = flags;
+        self.pipe_layout_flags = flags;
         self
     }
 
@@ -54,8 +73,9 @@ impl<'a, 'b> ComputeBuilder<'a, 'b> {
         self
     }
 
-    pub fn build_compute (self) -> Result<Pipeline<'a>> {
+    pub fn build (self, words: &[u32]) -> Result<Pipeline<'a>> {
         let entry = Entry::get();
+        let shader = self.build_shader(words)?;
 
         // Create pipeline cache
         let mut cache = None;
@@ -69,10 +89,10 @@ impl<'a, 'b> ComputeBuilder<'a, 'b> {
             };
             let mut my_cache = 0;
             tri! {
-                (entry.create_pipeline_cache)(self.device().id(), addr_of!(cache_info), core::ptr::null(), addr_of_mut!(my_cache))
+                (entry.create_pipeline_cache)(self.device.id(), addr_of!(cache_info), core::ptr::null(), addr_of_mut!(my_cache))
             }
             if let Some(my_cache) = NonZeroU64::new(my_cache) {
-                cache = Some(PipelineCache { inner: my_cache, device: self.device() });
+                cache = Some(PipelineCache { inner: my_cache, device: self.device });
             } else {
                 return Err(vk::ERROR_UNKNOWN.into())
             }
@@ -83,16 +103,16 @@ impl<'a, 'b> ComputeBuilder<'a, 'b> {
         let layout_info = vk::PipelineLayoutCreateInfo {
             sType: vk::STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             pNext: core::ptr::null(),
-            flags: self.layout_flags.bits(),
+            flags: self.pipe_layout_flags.bits(),
             setLayoutCount: 1,
-            pSetLayouts: addr_of!(self.shader.layout).cast(),
+            pSetLayouts: &shader.layout(),
             pushConstantRangeCount: 0,
             pPushConstantRanges: core::ptr::null(),
         };
-        tri! { (entry.create_pipeline_layout)(self.device().id(), addr_of!(layout_info), core::ptr::null(), addr_of_mut!(my_layout)) }
+        tri! { (entry.create_pipeline_layout)(self.device.id(), addr_of!(layout_info), core::ptr::null(), addr_of_mut!(my_layout)) }
         let layout;
         if let Some(my_layout) = NonZeroU64::new(my_layout) {
-            layout = PipelineLayout { inner: my_layout, device: self.device() };
+            layout = PipelineLayout { inner: my_layout, device: self.device };
         } else {
             return Err(vk::ERROR_UNKNOWN.into())
         }
@@ -102,15 +122,23 @@ impl<'a, 'b> ComputeBuilder<'a, 'b> {
         let info = vk::ComputePipelineCreateInfo {
             sType: vk::STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
             pNext: core::ptr::null(),
-            flags: self.flags.bits(),
-            stage: self.stage,
+            flags: self.pipe_flags.bits(),
+            stage: vk::PipelineShaderStageCreateInfo {
+                sType: vk::STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                pNext: core::ptr::null(),
+                flags: 0,
+                stage: ShaderStage::COMPUTE.bits(),
+                module: shader.module(),
+                pName: self.entry.as_ptr(),
+                pSpecializationInfo: core::ptr::null(),
+            },
             layout: layout.id(),
             basePipelineHandle: vk::NULL_HANDLE,
             basePipelineIndex: 0,
         };
         tri! {
             (entry.create_compute_pipelines)(
-                self.device().id(),
+                self.device.id(),
                 cache.as_ref().map_or(vk::NULL_HANDLE, PipelineCache::id),
                 1,
                 addr_of!(info),
@@ -120,23 +148,56 @@ impl<'a, 'b> ComputeBuilder<'a, 'b> {
         };
 
         if let Some(inner) = NonZeroU64::new(pipeline) {
-            return Ok(Pipeline { inner, device: self.shader.module.device })
+            let pool = match self.build_descriptor_pool() {
+                Ok(x) => x,
+                Err(e) => {
+                    (Entry::get().destroy_pipeline)(self.device.id(), inner.get(), core::ptr::null());
+                    return Err(e);
+                }
+            };
+
+            let set = DescriptorSet::new(&pool, shaders);
+
+            return Ok(Pipeline { inner, device: shader.device() })
         }
         return Err(vk::ERROR_UNKNOWN.into())
     }
+
+    fn build_shader (&mut self, words: &[u32]) -> Result<Shader<'a>> {
+        let builder = crate::shader::Builder {
+            bindings: core::mem::take(&mut self.bindings),
+            flags: self.layout_flags,
+            stage: ShaderStage::COMPUTE,
+            device: self.device,
+            entry: self.entry,
+        };
+
+        return builder.build(words);
+    }
+
+    fn build_descriptor_pool (&mut self) -> Result<DescriptorPool<'a>> {
+        let builder = crate::descriptor::Builder {
+            flags: DescriptorPoolFlags::empty(),
+            capacity: 1,
+            pool_sizes: core::mem::take(&mut self.pool_sizes),
+            device: self.device,
+        };
+
+        return builder.build()
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Pipeline<'a> {
     inner: NonZeroU64,
     device: &'a Device
 }
 
 impl<'a> Pipeline<'a> {
-    #[inline]
-    pub fn compute<'b> (shader: &'b Shader<'a>, entry: &'b CStr) -> ComputeBuilder<'a, 'b> {
-        return ComputeBuilder::new(shader, entry)
-    }
+    /*#[inline]
+    pub fn compute<'b: 'a> (shader: &'b Shader<'a>) -> ComputeBuilder<'a, 'b> {
+        return ComputeBuilder::new(shader)
+    }*/
 }
 
 impl Drop for Pipeline<'_> {
@@ -206,6 +267,7 @@ bitflags::bitflags! {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
 struct PipelineCache<'a> {
     inner: NonZeroU64,
     device: &'a Device
@@ -225,6 +287,7 @@ impl Drop for PipelineCache<'_> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
 struct PipelineLayout<'a> {
     inner: NonZeroU64,
     device: &'a Device

@@ -43,6 +43,7 @@ pub mod buffer;
 pub mod alloc;
 pub mod utils;
 pub mod pipeline;
+pub mod descriptor;
 
 //flat_mod! { alloc }
 
@@ -50,6 +51,7 @@ pub type Result<T> = ::core::result::Result<T, error::Error>;
 
 use std::{marker::{PhantomData}, ffi::{CStr, OsStr, c_char}, ptr::{addr_of, addr_of_mut}, mem::transmute, num::NonZeroU64, fmt::Debug};
 use libloading::{Library};
+use utils::usize_to_u32;
 use vulkan_bindings::make_version;
 
 #[cfg(windows)]
@@ -88,6 +90,7 @@ proc::entry! {
     "vkCreatePipelineLayout",
     "vkCreatePipelineCache",
     "vkCreateComputePipelines",
+    "vkCreateDescriptorPool",
     // Destructors
     "vkDestroyInstance",
     "vkDestroyDevice",
@@ -97,6 +100,7 @@ proc::entry! {
     "vkDestroyPipelineLayout",
     "vkDestroyPipelineCache",
     "vkDestroyPipeline",
+    "vkDestroyDescriptorPool",
     "vkFreeMemory",
 }
 
@@ -190,7 +194,7 @@ impl<'a> Builder<'a> {
         let ext = ext.into_iter().map(CStr::as_ptr).collect::<Box<[_]>>();
         let (ptr, len) = Box::into_raw(ext).to_raw_parts();
 
-        self.instance.enabledExtensionCount = u32::try_from(len).unwrap();
+        self.instance.enabledExtensionCount = usize_to_u32(len);
         self.instance.ppEnabledExtensionNames = ptr.cast::<*const c_char>();
         self
     }
@@ -199,7 +203,7 @@ impl<'a> Builder<'a> {
         let layers = layers.into_iter().map(CStr::as_ptr).collect::<Box<[_]>>();
         let (ptr, len) = Box::into_raw(layers).to_raw_parts();
 
-        self.instance.enabledLayerCount = u32::try_from(len).unwrap();
+        self.instance.enabledLayerCount = usize_to_u32(len);
         self.instance.ppEnabledLayerNames = ptr.cast::<*const c_char>();
         self
     }

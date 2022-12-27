@@ -1,6 +1,6 @@
 use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}, mem::MaybeUninit};
 use vk::DeviceSize;
-use crate::{Result, Entry, queue::{Queue}, physical_dev::{PhysicalDevice, Family}, buffer::{Buffer, UsageFlags, BufferFlags}, alloc::{MemoryFlags, DeviceAllocator}};
+use crate::{Result, Entry, queue::{Queue}, physical_dev::{PhysicalDevice, Family}, buffer::{Buffer, UsageFlags, BufferFlags}, alloc::{MemoryFlags, DeviceAllocator}, utils::usize_to_u32};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Device {
@@ -30,7 +30,7 @@ impl Device {
     }
 
     #[inline]
-    pub async fn create_buffer <'a, T, A: 'a + DeviceAllocator> (&'a self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<'_, MaybeUninit<T>, A>> {
+    pub async fn create_buffer<'a, T, A: 'a + DeviceAllocator> (&'a self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<'_, MaybeUninit<T>, A>> {
         return Buffer::new_uninit(self, capacity, usage, flags, memory_flags, alloc).await
     }
 }
@@ -146,7 +146,7 @@ impl<'a> QueueBuilder<'a> {
                 pNext: core::ptr::null_mut(),
                 flags: 0,
                 queueFamilyIndex: 0,
-                queueCount: u32::try_from(priorities.len()).unwrap(),
+                queueCount: usize_to_u32(priorities.len()),
                 pQueuePriorities: priorities.as_ptr(),
             }),
             parent,

@@ -1,6 +1,6 @@
 use std::{num::NonZeroU64};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Queue {
     pub(crate) inner: NonZeroU64
 }

@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vulkan = { path = "vulkan" }
+vulkan = { path = "vulkan", features = ["tokio"] }
 anyhow = "1.0.68"
 cfg-if = "1.0.0"
 docfg = "0.1.0"

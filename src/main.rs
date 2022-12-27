@@ -1,7 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata)]
 
-use vulkan::{Entry, device::{Device}, buffer::{UsageFlags, BufferFlags}, physical_dev::PhysicalDevice, alloc::{MemoryFlags, Raw}, shader::{Module, Shader, BindingType, StageFlags}, pipeline::Pipeline};
+use vulkan::{Entry, device::{Device}, physical_dev::PhysicalDevice, shader::{Shader, ShaderStage}, pipeline::Pipeline, descriptor::{DescriptorType, DescriptorPool, DescriptorSet}, utils::read_spv_tokio};
 
 #[macro_export]
 macro_rules! flat_mod {
@@ -31,15 +31,26 @@ async fn main () -> anyhow::Result<()> {
     let (dev, _) = Device::builder(phy)
         .queues(&[1f32]).build()
         .build()?;
+
+    let mut file = tokio::fs::File::open("target/main.spv").await.unwrap();
+    let words = read_spv_tokio(&mut file).await.unwrap();
+
+    let shader = Shader::builder(&dev, ShaderStage::COMPUTE)
+        .binding(DescriptorType::StorageBuffer, 1)
+        .binding(DescriptorType::StorageBuffer, 1)
+    .build(&words)?;
+
     
-    let shader = Shader::builder(&dev)
-        .binding(BindingType::StorageBuffer, 1, StageFlags::COMPUTE)
-        .binding(BindingType::StorageBuffer, 1, StageFlags::COMPUTE)
-    .build(include_bytes!("../target/main.spv"))?;
+    let pipeline = Pipeline::compute(&shader).build()?;
+    
+    let pool = DescriptorPool::builder(&dev, 1)
+        .pool_size(DescriptorType::StorageBuffer, 2)
+        .build()?;
 
-    let pipeline = Pipeline::compute(&shader, cstr!("main")).build_compute()?;
-
+    let set = DescriptorSet::new(&pool);
+    
     println!("{pipeline:#?}");
+    println!("{pool:#?}");
 
     Ok(())
 }
