@@ -1,7 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata)]
 
-use vulkan::{Entry, device::{Device}, physical_dev::PhysicalDevice, shader::{Shader, ShaderStage}, pipeline::Pipeline, descriptor::{DescriptorType, DescriptorPool, DescriptorSet}, utils::read_spv_tokio};
+use vulkan::{Entry, device::{Device}, physical_dev::PhysicalDevice, pipeline::{ComputeBuilder}, descriptor::{DescriptorType, DescriptorPool}, utils::{read_spv}, buffer::{Buffer, UsageFlags, BufferFlags}, alloc::{MemoryFlags, Raw}, pool::{CommandPool, CommandPoolFlags, CommandBufferLevel}};
 
 #[macro_export]
 macro_rules! flat_mod {
@@ -23,34 +23,42 @@ macro_rules! cstr {
     }};
 }
 
-#[tokio::main]
-async fn main () -> anyhow::Result<()> {
-    let _ = unsafe { Entry::builder(1, 0, 0).build_in("/opt/homebrew/Cellar/molten-vk/1.2.1/lib/libMoltenVK.dylib") }?;
+fn main () -> anyhow::Result<()> {
+    //let _ = unsafe { Entry::builder(1, 0, 0).build_in("/opt/homebrew/Cellar/molten-vk/1.2.1/lib/libMoltenVK.dylib") }?;
+    let _ = unsafe { Entry::builder(1, 0, 0).build() }?;
     
     let phy = PhysicalDevice::first()?;
-    let (dev, _) = Device::builder(phy)
+    let family = phy.families().next().unwrap();
+    let dev = Device::builder(phy)
         .queues(&[1f32]).build()
         .build()?;
 
-    let mut file = tokio::fs::File::open("target/main.spv").await.unwrap();
-    let words = read_spv_tokio(&mut file).await.unwrap();
+    let mut input = Buffer::new_uninit(&dev, 5, UsageFlags::STORAGE_BUFFER, BufferFlags::empty(), MemoryFlags::MAPABLE, Raw)?;
+    let output = Buffer::<f32, _>::new_uninit(&dev, 5, UsageFlags::STORAGE_BUFFER, BufferFlags::empty(), MemoryFlags::MAPABLE, Raw)?;
 
-    let shader = Shader::builder(&dev, ShaderStage::COMPUTE)
+    input.map(..)?.init_from_slice(&[1f32, 2f32, 3f32, 4f32, 5f32]);
+    let input = unsafe { input.assume_init() };
+
+    let mut file = std::fs::File::open("target/main.spv")?;
+    let words = read_spv(&mut file)?;
+    
+    let mut pipeline = ComputeBuilder::new(&dev)
         .binding(DescriptorType::StorageBuffer, 1)
         .binding(DescriptorType::StorageBuffer, 1)
-    .build(&words)?;
+        .build(&words)?;
+    
+    let set = pipeline.sets().first().unwrap();
+    let input_desc = set.write_descriptor(&input, 0);
+    let output_desc = set.write_descriptor(&output, 0);
+    pipeline.sets_mut().update(&[input_desc, output_desc]);
 
-    
-    let pipeline = Pipeline::compute(&shader).build()?;
-    
     let pool = DescriptorPool::builder(&dev, 1)
         .pool_size(DescriptorType::StorageBuffer, 2)
         .build()?;
-
-    let set = DescriptorSet::new(&pool);
     
-    println!("{pipeline:#?}");
-    println!("{pool:#?}");
+    let cmd = CommandPool::new(&dev, family, CommandPoolFlags::empty())?;
+    let mut cmd_buff = cmd.allocate_buffers(1, CommandBufferLevel::Primary)?;
+    let cmd_buff = &mut cmd_buff[0];
 
     Ok(())
 }

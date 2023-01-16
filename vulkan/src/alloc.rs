@@ -1,13 +1,13 @@
-use std::{num::NonZeroU64, marker::PhantomData, mem::MaybeUninit, ptr::{addr_of, addr_of_mut}, future::{ready, Ready}};
-use futures::{Future};
+use std::{num::NonZeroU64, marker::PhantomData, mem::MaybeUninit, ptr::{addr_of, addr_of_mut}, fmt::Debug};
 use vk::MemoryType;
 use crate::{Entry, Result, device::Device};
 
 pub trait MemoryMetadata {
     fn offset (&self) -> vk::DeviceSize;
+    /// The full size of the memory block, including the range not accessible by this pointer
+    fn full_size (&self) -> vk::DeviceSize;
 }
 
-#[derive(Debug)]
 pub struct MemoryPtr<'a, A: ?Sized + DeviceAllocator> {
     inner: NonZeroU64,
     device: &'a Device,
@@ -24,6 +24,11 @@ impl<'a, A: ?Sized + DeviceAllocator> MemoryPtr<'a, A> {
             _meta: meta,
             _phtm: PhantomData,
         }
+    }
+
+    #[inline]
+    pub fn size (&self) -> vk::DeviceSize {
+        return self._meta.full_size() - self.offset()
     }
 
     #[inline]
@@ -44,11 +49,21 @@ impl<A: ?Sized + DeviceAllocator> MemoryPtr<'_, A> {
     }
 }
 
+impl<A: ?Sized + DeviceAllocator> Debug for MemoryPtr<'_, A> where A::Metadata: Debug {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MemoryPtr")
+            .field("inner", &self.inner)
+            .field("device", &self.device)
+            .field("_meta", &self._meta)
+            .field("_phtm", &self._phtm)
+            .finish()
+    }
+}
+
 pub unsafe trait DeviceAllocator {
     type Metadata: MemoryMetadata;
-    type Allocate<'a, 'b>: 'a + Future<Output = Result<MemoryPtr<'a, Self>>> where Self: 'b;
 
-    fn allocate<'a, 'b> (&'b self, device: &'a Device, size: vk::DeviceSize, align: vk::DeviceSize, flags: MemoryFlags) -> Self::Allocate<'a, 'b>;
+    fn allocate<'a> (&self, device: &'a Device, size: vk::DeviceSize, align: vk::DeviceSize, flags: MemoryFlags) -> Result<MemoryPtr<'a, Self>>;
     fn free (&self, ptr: MemoryPtr<Self>);
 }
 
@@ -56,10 +71,9 @@ pub unsafe trait DeviceAllocator {
 pub struct Raw;
 
 unsafe impl DeviceAllocator for Raw {
-    type Metadata = ();
-    type Allocate<'a, 'b> = Ready<Result<MemoryPtr<'a, Self>>> where Self: 'b;
+    type Metadata = RawInfo;
 
-    fn allocate<'a, 'b> (&'b self, device: &'a Device, size: vk::DeviceSize, _align: vk::DeviceSize, flags: MemoryFlags) -> Self::Allocate<'a, 'b> {
+    fn allocate<'a, 'b> (&'b self, device: &'a Device, size: vk::DeviceSize, _align: vk::DeviceSize, flags: MemoryFlags) -> Result<MemoryPtr<'a, Self>> {
         let entry = Entry::get();
 
         let mut props = MaybeUninit::uninit();
@@ -86,20 +100,37 @@ unsafe impl DeviceAllocator for Raw {
             let mut memory = 0;
             match (entry.allocate_memory)(device.id(), addr_of!(info), core::ptr::null(), addr_of_mut!(memory)) {
                 vk::SUCCESS => {},
-                e => return ready(Err(e.into()))
+                e => return Err(e.into())
             }
 
             if let Some(inner) = NonZeroU64::new(memory) {
-                return ready(Ok(MemoryPtr { inner, device, _meta: (), _phtm: PhantomData }))
+                return Ok(MemoryPtr { inner, device, _meta: RawInfo { size }, _phtm: PhantomData })
             }
         }
         
-        return ready(Err(vk::ERROR_OUT_OF_DEVICE_MEMORY.into()))
+        return Err(vk::ERROR_OUT_OF_DEVICE_MEMORY.into())
     }
 
     #[inline]
     fn free (&self, ptr: MemoryPtr<Self>) {
         (Entry::get().free_memory)(ptr.device.id(), ptr.id(), core::ptr::null())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RawInfo {
+    size: vk::DeviceSize
+}
+
+impl MemoryMetadata for RawInfo {
+    #[inline]
+    fn offset (&self) -> vk::DeviceSize {
+        0
+    }
+
+    #[inline]
+    fn full_size (&self) -> vk::DeviceSize {
+        return self.size
     }
 }
 
@@ -131,12 +162,5 @@ impl Default for MemoryFlags {
     #[inline]
     fn default() -> Self {
         Self::DEVICE_LOCAL
-    }
-}
-
-impl MemoryMetadata for () {
-    #[inline]
-    fn offset (&self) -> vk::DeviceSize {
-        0
     }
 }

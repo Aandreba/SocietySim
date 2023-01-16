@@ -44,6 +44,7 @@ pub mod alloc;
 pub mod utils;
 pub mod pipeline;
 pub mod descriptor;
+pub mod pool;
 
 //flat_mod! { alloc }
 
@@ -91,6 +92,10 @@ proc::entry! {
     "vkCreatePipelineCache",
     "vkCreateComputePipelines",
     "vkCreateDescriptorPool",
+    "vkAllocateDescriptorSets",
+    "vkUpdateDescriptorSets",
+    "vkCreateCommandPool",
+    "vkAllocateCommandBuffers",
     // Destructors
     "vkDestroyInstance",
     "vkDestroyDevice",
@@ -101,7 +106,10 @@ proc::entry! {
     "vkDestroyPipelineCache",
     "vkDestroyPipeline",
     "vkDestroyDescriptorPool",
+    "vkDestroyCommandPool",
+    "vkFreeDescriptorSets",
     "vkFreeMemory",
+    "vkFreeCommandBuffers",
 }
 
 impl Entry {

@@ -25,13 +25,25 @@ impl Device {
     }
 
     #[inline]
-    pub async fn create_buffer_uninit<'a, T, A: 'a + DeviceAllocator> (&'a self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<'_, MaybeUninit<T>, A>> {
-        return Buffer::new_uninit(self, capacity, usage, flags, memory_flags, alloc).await
+    pub fn get_queue<'a> (&'a self, family: Family, idx: u32) -> Result<Queue<'a>> {
+        let mut queue = 0;
+        (Entry::get().get_device_queue)(self.id(), family.idx(), idx, addr_of_mut!(queue));
+
+        if let Some(inner) = NonZeroU64::new(queue) {
+            return Ok(Queue { inner, parent: self, index: idx });
+        } else {
+            return Err(vk::ERROR_UNKNOWN.into())
+        }
     }
 
     #[inline]
-    pub async fn create_buffer<'a, T, A: 'a + DeviceAllocator> (&'a self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<'_, MaybeUninit<T>, A>> {
-        return Buffer::new_uninit(self, capacity, usage, flags, memory_flags, alloc).await
+    pub fn create_buffer_uninit<'a, T, A: 'a + DeviceAllocator> (&'a self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<'_, MaybeUninit<T>, A>> {
+        return Buffer::new_uninit(self, capacity, usage, flags, memory_flags, alloc)
+    }
+
+    #[inline]
+    pub fn create_buffer<'a, T, A: 'a + DeviceAllocator> (&'a self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<'_, MaybeUninit<T>, A>> {
+        return Buffer::new_uninit(self, capacity, usage, flags, memory_flags, alloc)
     }
 }
 
@@ -79,7 +91,7 @@ impl<'a> Builder<'a> {
         return QueueBuilder::new(self, priorities)
     }
 
-    pub fn build (self) -> Result<(Device, Vec<Queue>)> {
+    pub fn build (self) -> Result<Device> {
         let entry = Entry::get();
         let mut result: vk::Device = 0;
         tri! {
@@ -87,25 +99,7 @@ impl<'a> Builder<'a> {
         };
 
         if let Some(inner) = NonZeroU64::new(result) {
-            let mut queues = Vec::<Queue>::new();
-
-            if !self.inner.pQueueCreateInfos.is_null() {
-                let info = unsafe { &*self.inner.pQueueCreateInfos };
-                queues.reserve(info.queueCount as usize);
-
-                for i in 0..info.queueCount {
-                    let mut queue = 0;
-                    (entry.get_device_queue)(inner.get(), info.queueFamilyIndex, i, addr_of_mut!(queue));
-
-                    if let Some(inner) = NonZeroU64::new(queue) {
-                        queues.push(Queue { inner });
-                    } else {
-                        return Err(vk::ERROR_INITIALIZATION_FAILED.into())
-                    }
-                }
-            }
-
-            return Ok((Device { inner, parent: self.parent }, queues))
+            return Ok(Device { inner, parent: self.parent })
         }
         return Err(vk::ERROR_INITIALIZATION_FAILED.into())
     }
@@ -160,7 +154,7 @@ impl<'a> QueueBuilder<'a> {
             return Err(vk::ERROR_UNKNOWN.into())
         }
 
-        self.inner.queueFamilyIndex = family.idx;
+        self.inner.queueFamilyIndex = family.idx();
         return Ok(self)
     }
 

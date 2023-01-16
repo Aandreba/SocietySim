@@ -1,5 +1,5 @@
 use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ffi::CStr};
-use crate::{shader::{LayoutCreateFlags, ShaderStage, Shader}, Entry, Result, device::Device, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSet}};
+use crate::{shader::{LayoutCreateFlags, ShaderStage, Shader}, Entry, Result, device::Device, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSets}};
 
 const DEFAULT_ENTRY: &CStr = unsafe { cstr!("main") };
 
@@ -16,7 +16,7 @@ pub struct ComputeBuilder<'a> {
 
 impl<'a> ComputeBuilder<'a> {
     #[inline]
-    pub fn new (device: &'a Device, entry: &'a CStr) -> Self {
+    pub fn new (device: &'a Device) -> Self {
         return Self {
             pipe_flags: PipelineFlags::empty(),
             pipe_layout_flags: PipelineLayoutFlags::empty(),
@@ -73,7 +73,7 @@ impl<'a> ComputeBuilder<'a> {
         self
     }
 
-    pub fn build (self, words: &[u32]) -> Result<Pipeline<'a>> {
+    pub fn build (mut self, words: &[u32]) -> Result<Pipeline<'a>> {
         let entry = Entry::get();
         let shader = self.build_shader(words)?;
 
@@ -156,10 +156,10 @@ impl<'a> ComputeBuilder<'a> {
                 }
             };
 
-            let set = DescriptorSet::new(&pool, shaders);
-
-            return Ok(Pipeline { inner, device: shader.device() })
+            let sets = DescriptorSets::new(pool, core::slice::from_ref(&shader))?;
+            return Ok(Pipeline { inner, sets })
         }
+
         return Err(vk::ERROR_UNKNOWN.into())
     }
 
@@ -190,10 +190,35 @@ impl<'a> ComputeBuilder<'a> {
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Pipeline<'a> {
     inner: NonZeroU64,
-    device: &'a Device
+    sets: DescriptorSets<'a>
 }
 
 impl<'a> Pipeline<'a> {
+    #[inline]
+    pub fn id (&self) -> u64 {
+        return self.inner.get()
+    }
+
+    #[inline]
+    pub fn device (&self) -> &Device {
+        return self.sets.device()
+    }
+
+    #[inline]
+    pub fn sets (&self) -> &DescriptorSets<'a> {
+        return &self.sets
+    }
+
+    #[inline]
+    pub fn sets_mut (&mut self) -> &mut DescriptorSets<'a> {
+        return &mut self.sets
+    }
+
+    #[inline]
+    pub fn pool (&self) -> &DescriptorPool<'a> {
+        return self.sets.pool()
+    }
+
     /*#[inline]
     pub fn compute<'b: 'a> (shader: &'b Shader<'a>) -> ComputeBuilder<'a, 'b> {
         return ComputeBuilder::new(shader)
@@ -203,7 +228,7 @@ impl<'a> Pipeline<'a> {
 impl Drop for Pipeline<'_> {
     #[inline]
     fn drop(&mut self) {
-        (Entry::get().destroy_pipeline)(self.device.id(), self.inner.get(), core::ptr::null())
+        (Entry::get().destroy_pipeline)(self.device().id(), self.id(), core::ptr::null())
     }
 }
 

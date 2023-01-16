@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, num::NonZeroU64, ptr::{addr_of, addr_of_mut, NonNull}, mem::{MaybeUninit, ManuallyDrop}, ops::{Deref, DerefMut, RangeBounds, Bound}, fmt::Debug};
+use std::{marker::PhantomData, num::{NonZeroU64}, ptr::{addr_of, addr_of_mut, NonNull}, mem::{MaybeUninit, ManuallyDrop}, ops::{Deref, DerefMut, RangeBounds, Bound}, fmt::Debug};
 use vk::{DeviceSize};
 use crate::{Result, Entry, device::{Device}, alloc::{DeviceAllocator, MemoryPtr, MemoryFlags}};
 
@@ -12,7 +12,7 @@ pub struct Buffer<'a, T, A: DeviceAllocator> {
 impl<'a, T, A: DeviceAllocator> Buffer<'a, T, A> {
     const BYTES_PER_ELEMENT: vk::DeviceSize = core::mem::size_of::<T>() as vk::DeviceSize;
 
-    pub async fn new_uninit (parent: &'a Device, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<MaybeUninit<T>, A>> where A: 'a {
+    pub fn new_uninit (parent: &'a Device, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<MaybeUninit<T>, A>> where A: 'a {
         let entry = Entry::get();
         let info = vk::BufferCreateInfo {
             sType: vk::STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -31,8 +31,7 @@ impl<'a, T, A: DeviceAllocator> Buffer<'a, T, A> {
         };
 
         if let Some(buffer) = NonZeroU64::new(inner) {
-            let memory = alloc.allocate(parent, Self::BYTES_PER_ELEMENT * capacity, core::mem::align_of::<T>() as DeviceSize, memory_flags).await?;
-            
+            let memory = alloc.allocate(parent, Self::BYTES_PER_ELEMENT * capacity, core::mem::align_of::<T>() as DeviceSize, memory_flags)?;
             tri! {
                 (entry.bind_buffer_memory)(parent.id(), buffer.get(), memory.id(), memory.offset())
             };
@@ -50,10 +49,7 @@ impl<'a, T, A: DeviceAllocator> Buffer<'a, T, A> {
 
     #[inline]
     pub fn size (&self) -> u64 {
-        let mut requirements = MaybeUninit::uninit();
-        (Entry::get().get_buffer_memory_requirements)(self.device().id(), self.buffer.get(), requirements.as_mut_ptr());
-        let requirements = unsafe { requirements.assume_init() };
-        return requirements.size
+        return self.memory.size()
     }
 
     #[inline]
@@ -64,6 +60,15 @@ impl<'a, T, A: DeviceAllocator> Buffer<'a, T, A> {
     #[inline]
     pub fn device (&self) -> &Device {
         return self.memory.device()
+    }
+
+    #[inline]
+    pub fn descriptor (&self) -> vk::DescriptorBufferInfo {
+        return vk::DescriptorBufferInfo {
+            buffer: self.buffer.get(),
+            offset: self.memory.offset(),
+            range: self.size(),
+        }
     }
 
     #[inline]
@@ -80,13 +85,11 @@ impl<'a, T, A: DeviceAllocator> Buffer<'a, T, A> {
             Bound::Excluded(x) => (*x * Self::BYTES_PER_ELEMENT, *x),
             Bound::Included(x) => ((*x + 1) * Self::BYTES_PER_ELEMENT, *x + 1),
             Bound::Unbounded => {
-                let mut requirements = MaybeUninit::uninit();
-                (entry.get_buffer_memory_requirements)(self.device().id(), self.buffer.get(), requirements.as_mut_ptr());
-                let requirements = unsafe { requirements.assume_init() };
-                (requirements.size, requirements.size / Self::BYTES_PER_ELEMENT)
+                let size = self.size();
+                (size, size / Self::BYTES_PER_ELEMENT)
             }
         };
-
+        
         let mut ptr = core::ptr::null_mut();
         (entry.map_memory)(self.device().id(), self.memory.id(), start_bytes, end_bytes - start_bytes, 0, addr_of_mut!(ptr));
         

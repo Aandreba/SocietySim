@@ -188,7 +188,7 @@ impl Features {
 
 #[derive(Clone, Copy)]
 pub struct Family {
-    pub(crate) idx: u32,
+    idx: u32,
     inner: vk::QueueFamilyProperties,
     parent: PhysicalDevice,
 }
