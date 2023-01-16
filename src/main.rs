@@ -1,7 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata)]
 
-use vulkan::{Entry, device::{Device}, physical_dev::PhysicalDevice, pipeline::{ComputeBuilder}, descriptor::{DescriptorType, DescriptorPool}, utils::{read_spv}, buffer::{Buffer, UsageFlags, BufferFlags}, alloc::{MemoryFlags, Raw}, pool::{CommandPool, CommandPoolFlags, CommandBufferLevel}};
+use vulkan::{Entry, device::{Device}, physical_dev::PhysicalDevice, pipeline::{ComputeBuilder}, descriptor::{DescriptorType, DescriptorPool}, utils::{read_spv}, buffer::{Buffer, UsageFlags, BufferFlags}, alloc::{MemoryFlags, Raw}, pool::{CommandPool, CommandPoolFlags, CommandBufferLevel, CommandBufferUsage, PipelineBindPoint}, queue::{Fence, FenceFlags}};
 
 #[macro_export]
 macro_rules! flat_mod {
@@ -33,7 +33,7 @@ fn main () -> anyhow::Result<()> {
         .queues(&[1f32]).build()
         .build()?;
 
-    let mut input = Buffer::new_uninit(&dev, 5, UsageFlags::STORAGE_BUFFER, BufferFlags::empty(), MemoryFlags::MAPABLE, Raw)?;
+    let mut input = Buffer::<f32, _>::new_uninit(&dev, 5, UsageFlags::STORAGE_BUFFER, BufferFlags::empty(), MemoryFlags::MAPABLE, Raw)?;
     let output = Buffer::<f32, _>::new_uninit(&dev, 5, UsageFlags::STORAGE_BUFFER, BufferFlags::empty(), MemoryFlags::MAPABLE, Raw)?;
 
     input.map(..)?.init_from_slice(&[1f32, 2f32, 3f32, 4f32, 5f32]);
@@ -51,14 +51,23 @@ fn main () -> anyhow::Result<()> {
     let input_desc = set.write_descriptor(&input, 0);
     let output_desc = set.write_descriptor(&output, 0);
     pipeline.sets_mut().update(&[input_desc, output_desc]);
-
-    let pool = DescriptorPool::builder(&dev, 1)
-        .pool_size(DescriptorType::StorageBuffer, 2)
-        .build()?;
     
-    let cmd = CommandPool::new(&dev, family, CommandPoolFlags::empty())?;
-    let mut cmd_buff = cmd.allocate_buffers(1, CommandBufferLevel::Primary)?;
-    let cmd_buff = &mut cmd_buff[0];
+    let mut cmds = CommandPool::new(&dev, family, CommandPoolFlags::empty(), 1, CommandBufferLevel::Primary)?;
+    let mut cmd_buff = cmds.begin_mut(0, CommandBufferUsage::ONE_TIME_SUBMIT)?;
+    cmd_buff.bind_pipeline(PipelineBindPoint::Compute, &pipeline, ..);
+    cmd_buff.dispatch(5, 1, 1);
+    drop(cmd_buff);
+
+    let mut fence = Fence::new(&dev, FenceFlags::empty())?;
+    dev.get_queue(family, 0)?.submitter(&mut fence)
+        .add(&cmds, 0..1, None)
+        .submit()?;
+
+    fence.wait(None)?;
+    let mut output = unsafe { output.assume_init() };
+
+    let out = output.map(..)?;
+    println!("{:#?}", &out as &[f32]);
 
     Ok(())
 }

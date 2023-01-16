@@ -112,7 +112,7 @@ impl<'a> ComputeBuilder<'a> {
         tri! { (entry.create_pipeline_layout)(self.device.id(), addr_of!(layout_info), core::ptr::null(), addr_of_mut!(my_layout)) }
         let layout;
         if let Some(my_layout) = NonZeroU64::new(my_layout) {
-            layout = PipelineLayout { inner: my_layout, device: self.device };
+            layout = my_layout;
         } else {
             return Err(vk::ERROR_UNKNOWN.into())
         }
@@ -132,20 +132,24 @@ impl<'a> ComputeBuilder<'a> {
                 pName: self.entry.as_ptr(),
                 pSpecializationInfo: core::ptr::null(),
             },
-            layout: layout.id(),
+            layout: layout.get(),
             basePipelineHandle: vk::NULL_HANDLE,
             basePipelineIndex: 0,
         };
-        tri! {
-            (entry.create_compute_pipelines)(
-                self.device.id(),
-                cache.as_ref().map_or(vk::NULL_HANDLE, PipelineCache::id),
-                1,
-                addr_of!(info),
-                core::ptr::null(),
-                addr_of_mut!(pipeline)
-            )
-        };
+        match (entry.create_compute_pipelines)(
+            self.device.id(),
+            cache.as_ref().map_or(vk::NULL_HANDLE, PipelineCache::id),
+            1,
+            addr_of!(info),
+            core::ptr::null(),
+            addr_of_mut!(pipeline)
+        ) {
+            vk::SUCCESS => {},
+            e => {
+                (Entry::get().destroy_pipeline_layout)(self.device.id(), layout.get(), core::ptr::null());
+                return Err(e.into())
+            }
+        }
 
         if let Some(inner) = NonZeroU64::new(pipeline) {
             let pool = match self.build_descriptor_pool() {
@@ -157,9 +161,10 @@ impl<'a> ComputeBuilder<'a> {
             };
 
             let sets = DescriptorSets::new(pool, core::slice::from_ref(&shader))?;
-            return Ok(Pipeline { inner, sets })
+            return Ok(Pipeline { inner, layout, sets })
         }
 
+        (Entry::get().destroy_pipeline_layout)(self.device.id(), layout.get(), core::ptr::null());
         return Err(vk::ERROR_UNKNOWN.into())
     }
 
@@ -190,6 +195,7 @@ impl<'a> ComputeBuilder<'a> {
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Pipeline<'a> {
     inner: NonZeroU64,
+    layout: NonZeroU64,
     sets: DescriptorSets<'a>
 }
 
@@ -197,6 +203,11 @@ impl<'a> Pipeline<'a> {
     #[inline]
     pub fn id (&self) -> u64 {
         return self.inner.get()
+    }
+
+    #[inline]
+    pub fn layout (&self) -> u64 {
+        return self.layout.get()
     }
 
     #[inline]
@@ -228,7 +239,8 @@ impl<'a> Pipeline<'a> {
 impl Drop for Pipeline<'_> {
     #[inline]
     fn drop(&mut self) {
-        (Entry::get().destroy_pipeline)(self.device().id(), self.id(), core::ptr::null())
+        (Entry::get().destroy_pipeline_layout)(self.device().id(), self.layout(), core::ptr::null());
+        (Entry::get().destroy_pipeline)(self.device().id(), self.id(), core::ptr::null());
     }
 }
 
@@ -309,25 +321,5 @@ impl Drop for PipelineCache<'_> {
     #[inline]
     fn drop(&mut self) {
         (Entry::get().destroy_pipeline_cache)(self.device.id(), self.id(), core::ptr::null())
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-struct PipelineLayout<'a> {
-    inner: NonZeroU64,
-    device: &'a Device
-}
-
-impl PipelineLayout<'_> {
-    #[inline]
-    pub fn id (&self) -> u64 {
-        return self.inner.get()
-    }
-}
-
-impl Drop for PipelineLayout<'_> {
-    #[inline]
-    fn drop(&mut self) {
-        (Entry::get().destroy_pipeline_layout)(self.device.id(), self.id(), core::ptr::null())
     }
 }

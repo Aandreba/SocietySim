@@ -101,12 +101,13 @@ pub struct DescriptorSets<'a> {
 
 impl<'a> DescriptorSets<'a> {
     pub fn new (pool: DescriptorPool<'a>, shaders: &[Shader<'a>]) -> Result<Self> {
+        let layouts = shaders.iter().map(Shader::layout).collect::<Vec<_>>();
         let info = vk::DescriptorSetAllocateInfo {
             sType: vk::STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             pNext: core::ptr::null(),
             descriptorPool: pool.id(),
             descriptorSetCount: usize_to_u32(shaders.len()),
-            pSetLayouts: shaders.iter().map(Shader::layout).collect::<Vec<_>>().as_ptr(),
+            pSetLayouts: layouts.as_ptr(),
         };
 
         let mut sets = Box::<[vk::DescriptorSet]>::new_uninit_slice(shaders.len());
