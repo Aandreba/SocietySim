@@ -1,6 +1,8 @@
-#![no_std]
+#![cfg_attr(target_arch = "spirv", no_std)]
 
+pub mod time;
 pub mod person;
+pub mod person_event;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]

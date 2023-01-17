@@ -50,6 +50,7 @@ pub mod pool;
 
 pub type Result<T> = ::core::result::Result<T, error::Error>;
 pub use proc::{include_spv};
+use vk::get_version;
 
 use std::{marker::{PhantomData}, ffi::{CStr, OsStr, c_char}, ptr::{addr_of, addr_of_mut}, mem::transmute, num::NonZeroU64, fmt::Debug};
 use libloading::{Library};
@@ -105,6 +106,7 @@ proc::entry! {
     "vkCreateSemaphore",
     "vkQueueSubmit",
     "vkWaitForFences",
+    "vkEnumerateInstanceExtensionProperties",
     // Destructors
     "vkDestroyInstance",
     "vkDestroyDevice",
@@ -270,6 +272,50 @@ impl Drop for Builder<'_> {
             let _ = unsafe { Box::from_raw(ptr) };
         }
     }
+}
+
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct ExtensionProperty {
+    inner: vk::ExtensionProperties
+}
+
+impl Debug for ExtensionProperty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExtensionProperty")
+            .field("name", &self.name())
+            .field("version", &self.version())
+            .finish()
+    }
+}
+
+impl ExtensionProperty {
+    #[inline]
+    pub fn name (&self) -> &CStr {
+        return unsafe { CStr::from_ptr(self.inner.extensionName.as_ptr()) }
+    }
+
+    #[inline]
+    pub fn version (&self) -> (u32, u32, u32) {
+        return get_version(self.inner.specVersion)
+    }
+}
+
+pub fn extension_props() -> Result<Vec<ExtensionProperty>> {
+    let entry = crate::Entry::get();
+
+    let mut len = 0;
+    tri! {
+        (entry.enumerate_instance_extension_properties)(core::ptr::null(), addr_of_mut!(len), core::ptr::null_mut())
+    }
+
+    let mut result = Vec::<ExtensionProperty>::with_capacity(len as usize);
+    tri! {
+        (entry.enumerate_instance_extension_properties)(core::ptr::null(), addr_of_mut!(len), result.as_mut_ptr().cast())
+    }
+    unsafe { result.set_len(len as usize) };
+
+    return Ok(result)
 }
 
 bitflags::bitflags! {

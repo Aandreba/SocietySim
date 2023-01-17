@@ -15,7 +15,7 @@ use vulkan::{
     },
     queue::{Queue, Fence, FenceFlags},
     utils::u64_to_u32,
-    Entry,
+    Entry, extension_props,
 };
 pub mod game;
 
@@ -44,6 +44,9 @@ fn main() -> anyhow::Result<()> {
         Entry::builder(1, 1, 0)
             .build()
     }?;
+
+    #[cfg(debug_assertions)]
+    println!("{:#?}", extension_props());
 
     let phy = PhysicalDevice::first()?;
     let family = phy.families().next().unwrap();
