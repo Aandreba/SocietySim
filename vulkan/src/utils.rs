@@ -1,4 +1,4 @@
-use std::io::{Read, ErrorKind};
+use std::{io::{Read, ErrorKind}, ops::{RangeBounds, Bound}};
 use docfg::docfg;
 use futures::{AsyncRead, AsyncReadExt};
 
@@ -13,6 +13,19 @@ pub(crate) fn usize_to_u32 (v: usize) -> u32 {
     return u32::try_from(v).unwrap();
     #[cfg(not(debug_assertions))]
     return v as u32
+}
+
+/// Casts `u64` to `usize`
+/// 
+/// # Panics
+/// This method will panic when, in debug mode, the `u64` value doesn't fit inside a `usize`.
+/// In release mode, the value will be truncated.
+#[inline(always)]
+pub(crate) fn u64_to_usize (v: u64) -> usize {
+    #[cfg(debug_assertions)]
+    return usize::try_from(v).unwrap();
+    #[cfg(not(debug_assertions))]
+    return v as usize
 }
 
 #[inline]

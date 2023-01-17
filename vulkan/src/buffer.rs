@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, num::{NonZeroU64}, ptr::{addr_of, addr_of_mut, NonNull}, mem::{MaybeUninit, ManuallyDrop}, ops::{Deref, DerefMut, RangeBounds, Bound}, fmt::Debug};
 use vk::{DeviceSize};
-use crate::{Result, Entry, device::{Device}, alloc::{DeviceAllocator, MemoryPtr, MemoryFlags}};
+use crate::{Result, Entry, device::{Device}, alloc::{DeviceAllocator, MemoryPtr, MemoryFlags}, utils::u64_to_usize};
 
 pub struct Buffer<T, A: DeviceAllocator> {
     buffer: NonZeroU64,
@@ -41,7 +41,6 @@ impl<T, A: DeviceAllocator> Buffer<T, A> {
 
             let requirements = unsafe { result.assume_init() };
             let memory = alloc.allocate(requirements.size, requirements.alignment, memory_flags)?;
-            
             tri! {
                 (entry.bind_buffer_memory)(alloc.device().id(), buffer.get(), memory.id(), memory.range().start)
             };
@@ -76,40 +75,46 @@ impl<T, A: DeviceAllocator> Buffer<T, A> {
     pub fn descriptor (&self) -> vk::DescriptorBufferInfo {
         return vk::DescriptorBufferInfo {
             buffer: self.buffer.get(),
-            offset: self.memory.range().start,
-            range: self.size(),
+            offset: 0,
+            range: vk::WHOLE_SIZE,
         }
     }
 
     #[inline]
-    pub fn map (&mut self, bounds: impl RangeBounds<vk::DeviceSize>) -> Result<MapGuard<'_, T, A>> {
-        let entry = Entry::get();
-
-        let (start_bytes, start) = match bounds.start_bound() {
-            Bound::Excluded(x) => ((*x + 1) * Self::BYTES_PER_ELEMENT, *x + 1),
-            Bound::Included(x) => (*x * Self::BYTES_PER_ELEMENT, *x),
-            Bound::Unbounded => (0, 0)
-        };
-
-        let (end_bytes, end) = match bounds.end_bound() {
-            Bound::Excluded(x) => (*x * Self::BYTES_PER_ELEMENT, *x),
-            Bound::Included(x) => ((*x + 1) * Self::BYTES_PER_ELEMENT, *x + 1),
-            Bound::Unbounded => {
-                let size = self.size();
-                (size, size / Self::BYTES_PER_ELEMENT)
-            }
-        };
-        
-        let mut ptr = core::ptr::null_mut();
-        (entry.map_memory)(self.device().id(), self.memory.id(), start_bytes, end_bytes - start_bytes, 0, addr_of_mut!(ptr));
-        
-        if !ptr.is_null() {
-            let len = usize::try_from(end - start).unwrap();
-            let ptr = unsafe { core::slice::from_raw_parts_mut(ptr.cast::<T>(), len) };
-            return unsafe { Ok(MapGuard { ptr: NonNull::new_unchecked(ptr), buffer: self }) }
+    pub fn map (&self, bounds: impl RangeBounds<usize>) -> Result<MapGuard<'_, T, A>> {
+        unsafe {
+            let ptr = self.map_ptr(bounds)?;
+            return Ok(MapGuard { ptr, buffer: self })
         }
+    }
+
+    #[inline]
+    pub fn map_mut (&mut self, bounds: impl RangeBounds<usize>) -> Result<MapMutGuard<'_, T, A>> {
+        unsafe {
+            let ptr = self.map_ptr(bounds)?;
+            return Ok(MapMutGuard { ptr, buffer: self })
+        }
+    }
+
+    #[inline]
+    unsafe fn map_ptr (&self, bounds: impl RangeBounds<usize>) -> Result<NonNull<[T]>> {
+        let start = match bounds.start_bound() {
+            Bound::Excluded(x) => Bound::Excluded(*x * core::mem::size_of::<T>()),
+            Bound::Included(x) => Bound::Included(*x * core::mem::size_of::<T>()),
+            Bound::Unbounded => Bound::Unbounded
+        };
+
+        let end = match bounds.end_bound() {
+            Bound::Excluded(x) => Bound::Excluded(*x * core::mem::size_of::<T>()),
+            Bound::Included(x) => Bound::Included(*x * core::mem::size_of::<T>()),
+            Bound::Unbounded => Bound::Excluded(u64_to_usize(self.size()))
+        };
         
-        return Err(vk::ERROR_MEMORY_MAP_FAILED.into())
+        let (ptr, size) = self.alloc.map(&self.memory, (start, end))?.to_raw_parts();        
+        return Ok(NonNull::new_unchecked(core::ptr::from_raw_parts_mut::<[T]>(
+            ptr.as_ptr(),
+            size / core::mem::size_of::<T>()
+        )));
     }
 }
 
@@ -148,16 +153,7 @@ impl<T, A: DeviceAllocator> Drop for Buffer<T, A> {
 
 pub struct MapGuard<'a, T, A: DeviceAllocator> {
     ptr: NonNull<[T]>,
-    buffer: &'a mut Buffer<T, A>,
-}
-
-impl<T, A: DeviceAllocator> MapGuard<'_, MaybeUninit<T>, A> {
-    #[inline]
-    pub fn init_from_slice (&mut self, slice: &[T]) where T: Copy {
-        unsafe {
-            self.copy_from_slice(&*(slice as *const [T] as *const [MaybeUninit<T>]));
-        }
-    }
+    buffer: &'a Buffer<T, A>,
 }
 
 impl<T, A: DeviceAllocator> Deref for MapGuard<'_, T, A> {
@@ -169,17 +165,47 @@ impl<T, A: DeviceAllocator> Deref for MapGuard<'_, T, A> {
     }
 }
 
-impl<T, A: DeviceAllocator> DerefMut for MapGuard<'_, T, A> {
+impl<T, A: DeviceAllocator> Drop for MapGuard<'_, T, A> {
+    #[inline]
+    fn drop(&mut self) {
+        unsafe { self.buffer.alloc.unmap(&self.buffer.memory) }
+    }
+}
+
+pub struct MapMutGuard<'a, T, A: DeviceAllocator> {
+    ptr: NonNull<[T]>,
+    buffer: &'a mut Buffer<T, A>,
+}
+
+impl<T, A: DeviceAllocator> MapMutGuard<'_, MaybeUninit<T>, A> {
+    #[inline]
+    pub fn init_from_slice (&mut self, slice: &[T]) where T: Copy {
+        unsafe {
+            self.copy_from_slice(&*(slice as *const [T] as *const [MaybeUninit<T>]));
+        }
+    }
+}
+
+impl<T, A: DeviceAllocator> Deref for MapMutGuard<'_, T, A> {
+    type Target = [T];
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl<T, A: DeviceAllocator> DerefMut for MapMutGuard<'_, T, A> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.ptr.as_mut() }
     }
 }
 
-impl<T, A: DeviceAllocator> Drop for MapGuard<'_, T, A> {
+impl<T, A: DeviceAllocator> Drop for MapMutGuard<'_, T, A> {
     #[inline]
     fn drop(&mut self) {
-        (Entry::get().unmap_memory)(self.buffer.device().id(), self.buffer.memory.id());
+        unsafe { self.buffer.alloc.unmap(&self.buffer.memory) }
     }
 }
 

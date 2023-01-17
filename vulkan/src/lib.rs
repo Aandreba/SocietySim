@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "alloc", feature(allocator_api))]
-#![feature(is_some_and, type_alias_impl_trait, ptr_metadata, new_uninit, trait_alias)]
+#![feature(is_some_and, type_alias_impl_trait, ptr_metadata, new_uninit, trait_alias, pointer_byte_offsets)]
 
 //! https://vulkan-tutorial.com/
 

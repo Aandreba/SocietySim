@@ -1,14 +1,17 @@
-use crate::{device::Device, Entry, Result};
+use crate::{device::Device, Entry, Result, utils::u64_to_usize};
 use std::{
     fmt::Debug,
     marker::PhantomData,
     mem::{ManuallyDrop, MaybeUninit},
     num::NonZeroU64,
-    ops::Range,
-    ptr::{addr_of, addr_of_mut},
-    sync::{Mutex, MutexGuard, TryLockError, Arc}, rc::Rc, panic::AssertUnwindSafe,
+    ops::{Range, RangeBounds, Bound},
+    ptr::{addr_of, addr_of_mut, NonNull},
+    sync::{Mutex, MutexGuard, TryLockError, Arc, atomic::{AtomicPtr, Ordering}}, rc::Rc, ffi::c_void, collections::{HashMap},
 };
 use vk::MemoryType;
+
+const UNINIT: *mut c_void = core::ptr::null_mut();
+const INITIALIZING: *mut c_void = NonNull::dangling().as_ptr();
 
 pub trait MemoryMetadata {
     fn range(&self) -> Range<vk::DeviceSize>;
@@ -58,7 +61,15 @@ pub unsafe trait DeviceAllocator {
         align: vk::DeviceSize,
         flags: MemoryFlags,
     ) -> Result<MemoryPtr<Self::Metadata>>;
-    fn free(&self, ptr: MemoryPtr<Self::Metadata>);
+    
+    unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>);
+
+    /// # Safety
+    /// It is up to the caller to ensure that Rust's [borrowing rules](https://doc.rust-lang.org/stable/book/ch04-02-references-and-borrowing.html) are followed for the maps.
+    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>>;
+    /// # Safety
+    /// It is up to the caller to ensure that Rust's [borrowing rules](https://doc.rust-lang.org/stable/book/ch04-02-references-and-borrowing.html) are followed for the maps.
+    unsafe fn unmap (&self, mem: &MemoryPtr<Self::Metadata>);
 }
 
 unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for &T {
@@ -80,8 +91,18 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for &T {
     }
 
     #[inline]
-    fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
+    unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
         return T::free(*self, ptr)
+    }
+
+    #[inline]
+    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>> {
+        T::map(*self, mem, bounds)
+    }
+
+    #[inline]
+    unsafe fn unmap (&self, mem: &MemoryPtr<Self::Metadata>) {
+        T::unmap(*self, mem)
     }
 }
 
@@ -104,8 +125,18 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Box<T> {
     }
 
     #[inline]
-    fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
+    unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
         return T::free(self, ptr)
+    }
+
+    #[inline]
+    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>> {
+        T::map(self, mem, bounds)
+    }
+
+    #[inline]
+    unsafe fn unmap (&self, mem: &MemoryPtr<Self::Metadata>) {
+        T::unmap(self, mem)
     }
 }
 
@@ -128,8 +159,18 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Rc<T> {
     }
 
     #[inline]
-    fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
+    unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
         return T::free(self, ptr)
+    }
+
+    #[inline]
+    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>> {
+        T::map(self, mem, bounds)
+    }
+
+    #[inline]
+    unsafe fn unmap (&self, mem: &MemoryPtr<Self::Metadata>) {
+        T::unmap(self, mem)
     }
 }
 
@@ -152,39 +193,25 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Arc<T> {
     }
 
     #[inline]
-    fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
+    unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
         return T::free(self, ptr)
     }
-}
-
-unsafe impl<T: DeviceAllocator> DeviceAllocator for AssertUnwindSafe<T> {
-    type Metadata = T::Metadata;
 
     #[inline]
-    fn device(&self) -> &Device {
-        return T::device(self)
+    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>> {
+        T::map(self, mem, bounds)
     }
 
     #[inline]
-    fn allocate(
-        &self,
-        size: vk::DeviceSize,
-        align: vk::DeviceSize,
-        flags: MemoryFlags,
-    ) -> Result<MemoryPtr<Self::Metadata>> {
-        return T::allocate(self, size, align, flags)
-    }
-
-    #[inline]
-    fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
-        return T::free(self, ptr)
+    unsafe fn unmap (&self, mem: &MemoryPtr<Self::Metadata>) {
+        T::unmap(self, mem)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Raw<'a>(pub &'a Device);
+struct RawInner<'a>(pub &'a Device);
 
-unsafe impl DeviceAllocator for Raw<'_> {
+unsafe impl DeviceAllocator for RawInner<'_> {
     type Metadata = RawInfo;
 
     #[inline]
@@ -248,8 +275,48 @@ unsafe impl DeviceAllocator for Raw<'_> {
     }
 
     #[inline]
-    fn free(&self, ptr: MemoryPtr<RawInfo>) {
+    unsafe fn free(&self, ptr: MemoryPtr<RawInfo>) {
         (Entry::get().free_memory)(self.device().id(), ptr.id(), core::ptr::null())
+    }
+
+    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>> {
+        let entry = Entry::get();
+
+        let start = match bounds.start_bound() {
+            Bound::Excluded(x) => *x + 1,
+            Bound::Included(x) => *x,
+            Bound::Unbounded => 0
+        };
+
+        let end = match bounds.end_bound() {
+            Bound::Excluded(x) => *x,
+            Bound::Included(x) => *x + 1,
+            #[cfg(debug_assertions)]
+            Bound::Unbounded => usize::try_from(mem._meta.size).unwrap(),
+            #[cfg(not(debug_assertions))]
+            Bound::Unbounded => mem._meta.size as usize
+        };
+        
+        let len = end - start;
+        let mut ptr: *mut c_void = core::ptr::null_mut();
+        (entry.map_memory)(self.device().id(), mem.id(), start as u64, len as u64, 0, addr_of_mut!(ptr));
+        
+        if let Some(ptr) = NonNull::new(ptr) {
+            let ptr = ptr.as_ptr().byte_add(start);
+            debug_assert!(!ptr.is_null());
+
+            return Ok(NonNull::new_unchecked(core::ptr::from_raw_parts_mut::<[u8]>(
+                ptr.cast(),
+                len
+            )))
+        }
+
+        return Err(vk::ERROR_MEMORY_MAP_FAILED.into())
+    }
+
+    #[inline]
+    unsafe fn unmap (&self, mem: &MemoryPtr<Self::Metadata>) {
+        (Entry::get().unmap_memory)(self.device().id(), mem.id())
     }
 }
 
@@ -258,19 +325,21 @@ pub struct Page<'a> {
     inner: ManuallyDrop<MemoryPtr<RawInfo>>,
     flags: MemoryFlags,
     ranges: Mutex<Vec<Range<vk::DeviceSize>>>,
-    alloc: Raw<'a>,
+    mapped_ptr: AtomicPtr<c_void>,
+    alloc: RawInner<'a>,
 }
 
 impl<'a> Page<'a> {
     #[inline]
     pub fn new(device: &'a Device, size: vk::DeviceSize, flags: MemoryFlags) -> Result<Self> {
-        let raw = Raw(device);
+        let raw = RawInner(device);
         let inner = raw.allocate(size, 1, flags)?;
         return Ok(Self {
             inner: ManuallyDrop::new(inner),
-            flags,
-            alloc: raw,
             ranges: Mutex::new(vec![0..size]),
+            mapped_ptr: AtomicPtr::new(UNINIT),
+            alloc: raw,
+            flags,
         });
     }
 
@@ -372,12 +441,95 @@ unsafe impl DeviceAllocator for Page<'_> {
     }
 
     #[inline]
-    fn free(&self, ptr: MemoryPtr<PageInfo>) {
+    unsafe fn free(&self, ptr: MemoryPtr<PageInfo>) {
         let mut ranges = match self.ranges.lock() {
             Ok(x) => x,
             Err(e) => e.into_inner(),
         };
-        ranges.push(ptr._meta.range)
+        
+        let mut ptr_range = ptr._meta.range;
+        let mut i = 0;
+
+        while i < ranges.len() {
+            let range = unsafe { ranges.get_unchecked_mut(i) };
+            
+            if range.start == ptr_range.end {
+                range.start = ptr_range.start;
+                ptr_range = ranges.swap_remove(i);
+                i = 0;
+                continue;
+            }
+            
+            if range.end == ptr_range.start {
+                range.end = ptr_range.end;
+                ptr_range = ranges.swap_remove(i);
+                i = 0;
+                continue;
+            }
+
+            i += 1;
+        }
+
+        ranges.push(ptr_range)
+    }
+
+    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>> {        
+        // Obtained general mapped pointer
+        let ptr = loop {
+            match self.mapped_ptr.compare_exchange(UNINIT, INITIALIZING, Ordering::AcqRel, Ordering::Acquire) {
+                // Map the full region
+                Ok(_) => {
+                    let ptr = match self.alloc.map(&self.inner, ..) {
+                        Ok(x) => x.cast::<c_void>(),
+                        Err(e) => {
+                            self.mapped_ptr.store(UNINIT, Ordering::Release);
+                            return Err(e)
+                        }
+                    };
+                    
+                    self.mapped_ptr.store(ptr.as_ptr(), Ordering::Release);
+                    break ptr
+                },
+
+                // Wait until mapping is done
+                Err(INITIALIZING) => core::hint::spin_loop(),
+                // Get initialized mapping
+                Err(other) => break unsafe { NonNull::new_unchecked(other) }
+            }
+        };
+
+        // Calculate start & end points
+        let offset = u64_to_usize(mem._meta.range.start);
+        let start = offset + match bounds.start_bound() {
+            Bound::Excluded(x) => *x + 1,
+            Bound::Included(x) => *x,
+            Bound::Unbounded => 0
+        };
+        let end = match bounds.end_bound() {
+            Bound::Excluded(x) => offset + *x,
+            Bound::Included(x) => offset + *x + 1,
+            Bound::Unbounded => u64_to_usize(mem._meta.range.end),
+        };
+
+        // Check that mapped bounds are contained inside buffer
+        if (start as u64) > mem._meta.range.end || (end as u64) > mem._meta.range.end {
+            #[cfg(debug_assertions)]
+            eprintln!("Bounds overflow");
+            return Err(vk::ERROR_MEMORY_MAP_FAILED.into())
+        }
+
+        let ptr = ptr.as_ptr().byte_add(start);
+        debug_assert!(!ptr.is_null());
+
+        return Ok(NonNull::new_unchecked(core::ptr::from_raw_parts_mut(
+            ptr.cast(),
+            end - start
+        )));
+    }
+
+    #[inline]
+    unsafe fn unmap (&self, _mem: &MemoryPtr<Self::Metadata>) {
+        // noop
     }
 }
 
@@ -385,6 +537,10 @@ impl Drop for Page<'_> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
+            match *self.mapped_ptr.get_mut() {
+                UNINIT | INITIALIZING => {},
+                _ => self.alloc.unmap(&self.inner) 
+            }
             self.alloc.free(ManuallyDrop::take(&mut self.inner))
         }
     }
