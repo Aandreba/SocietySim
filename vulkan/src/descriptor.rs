@@ -206,7 +206,7 @@ impl DescriptorSet {
     }
 
     #[inline]
-    pub fn write_descriptor<'a, T, A: DeviceAllocator> (&self, buf: &Buffer<'a, T, A>, offset: u32) -> WriteDescriptorSet {
+    pub fn write_descriptor<T, A: DeviceAllocator> (&self, buf: &Buffer<T, A>, offset: u32) -> WriteDescriptorSet {
         let inner = vk::WriteDescriptorSet {
             sType: vk::STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             pNext: core::ptr::null(),

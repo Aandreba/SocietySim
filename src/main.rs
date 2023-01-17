@@ -1,7 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata)]
 
-use vulkan::{Entry, device::{Device}, physical_dev::PhysicalDevice, pipeline::{ComputeBuilder}, descriptor::{DescriptorType, DescriptorPool}, utils::{read_spv}, buffer::{Buffer, UsageFlags, BufferFlags}, alloc::{MemoryFlags, Raw}, pool::{CommandPool, CommandPoolFlags, CommandBufferLevel, CommandBufferUsage, PipelineBindPoint}, queue::{Fence, FenceFlags}, include_spv};
+use vulkan::{Entry, device::{Device}, physical_dev::PhysicalDevice, pipeline::{ComputeBuilder}, descriptor::{DescriptorType, DescriptorPool}, utils::{read_spv}, buffer::{Buffer, UsageFlags, BufferFlags}, alloc::{MemoryFlags, Raw, Page}, pool::{CommandPool, CommandPoolFlags, CommandBufferLevel, CommandBufferUsage, PipelineBindPoint}, queue::{Fence, FenceFlags}, include_spv};
 
 #[macro_export]
 macro_rules! flat_mod {
@@ -33,8 +33,9 @@ fn main () -> anyhow::Result<()> {
         .queues(&[1f32]).build()
         .build()?;
 
-    let mut input = Buffer::<f32, _>::new_uninit(&dev, 5, UsageFlags::STORAGE_BUFFER, BufferFlags::empty(), MemoryFlags::MAPABLE, Raw)?;
-    let output = Buffer::<f32, _>::new_uninit(&dev, 5, UsageFlags::STORAGE_BUFFER, BufferFlags::empty(), MemoryFlags::MAPABLE, Raw)?;
+    let alloc = Page::new(&dev, 1024, MemoryFlags::MAPABLE)?;
+    let mut input = Buffer::<f32, _>::new_uninit(5, UsageFlags::STORAGE_BUFFER, BufferFlags::empty(), MemoryFlags::MAPABLE, &alloc)?;
+    let output = Buffer::<f32, _>::new_uninit(5, UsageFlags::STORAGE_BUFFER, BufferFlags::empty(), MemoryFlags::MAPABLE, &alloc)?;
 
     input.map(..)?.init_from_slice(&[1f32, 2f32, 3f32, 4f32, 5f32]);
     let input = unsafe { input.assume_init() };

@@ -1,6 +1,5 @@
-use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}, mem::MaybeUninit};
-use vk::DeviceSize;
-use crate::{Result, Entry, queue::{Queue}, physical_dev::{PhysicalDevice, Family}, buffer::{Buffer, UsageFlags, BufferFlags}, alloc::{MemoryFlags, DeviceAllocator}, utils::usize_to_u32};
+use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}};
+use crate::{Result, Entry, queue::{Queue}, physical_dev::{PhysicalDevice, Family}, utils::usize_to_u32};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Device {
@@ -34,16 +33,6 @@ impl Device {
         } else {
             return Err(vk::ERROR_UNKNOWN.into())
         }
-    }
-
-    #[inline]
-    pub fn create_buffer_uninit<'a, T, A: 'a + DeviceAllocator> (&'a self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<'_, MaybeUninit<T>, A>> {
-        return Buffer::new_uninit(self, capacity, usage, flags, memory_flags, alloc)
-    }
-
-    #[inline]
-    pub fn create_buffer<'a, T, A: 'a + DeviceAllocator> (&'a self, capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<'_, MaybeUninit<T>, A>> {
-        return Buffer::new_uninit(self, capacity, usage, flags, memory_flags, alloc)
     }
 }
 
