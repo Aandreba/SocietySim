@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, marker::PhantomData, ops::Range, sync::{RwLock, RwLockReadGuard, LockResult}, time::Duration, slice::SliceIndex};
+use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, marker::PhantomData, sync::{RwLock, RwLockReadGuard, LockResult}, time::Duration, slice::SliceIndex};
 use crate::{device::Device, Entry, Result, utils::usize_to_u32, pool::{CommandPool}};
 
 #[derive(Debug, PartialEq, Hash)]
@@ -112,7 +112,7 @@ impl<'a> Fence<'a> {
     #[inline]
     pub fn bind_to<'b> (&mut self, pool: &'b mut CommandPool, queue: &mut Queue, semaphores: Option<&'b [Semaphore<'a>]>) -> Result<()> {
         queue.submitter(Some(self))
-            .add(pool, .., semaphores)
+            .add(pool, 0..1, semaphores)
             .submit()
     }
 

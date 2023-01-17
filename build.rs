@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .print_metadata(MetadataPrintout::Full)
         .capability(Capability::Int8)
         .capability(Capability::Int16)
-        .capability(Capability::VariablePointersStorageBuffer)
+        //.capability(Capability::VariablePointersStorageBuffer)
         .build()?;
     Ok(())
 }

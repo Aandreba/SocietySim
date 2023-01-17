@@ -30,6 +30,12 @@ impl<'a> ComputeBuilder<'a> {
     }
 
     #[inline]
+    pub fn entry (mut self, entry: &'a CStr) -> Self {
+        self.entry = entry;
+        self
+    }
+
+    #[inline]
     pub fn binding (mut self, ty: DescriptorType, len: u32) -> Self {
         let mut done = false;
         for size in self.pool_sizes.iter_mut() {

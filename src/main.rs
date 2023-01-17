@@ -9,11 +9,11 @@ use vulkan::{
     device::Device,
     include_spv,
     physical_dev::PhysicalDevice,
-    pipeline::ComputeBuilder,
+    pipeline::{ComputeBuilder, Pipeline},
     pool::{
-        CommandBufferUsage, CommandPool, PipelineBindPoint,
+        CommandBufferUsage, CommandPool, PipelineBindPoint, CommandPoolFlags, CommandBufferLevel,
     },
-    queue::{Fence, FenceFlags, Queue},
+    queue::{Queue, Fence, FenceFlags},
     utils::u64_to_u32,
     Entry,
 };
@@ -33,20 +33,27 @@ macro_rules! flat_mod {
 #[macro_export]
 macro_rules! cstr {
     ($l:literal) => {
+        #[allow(unused_unsafe)]
         unsafe { core::ffi::CStr::from_bytes_with_nul_unchecked(concat!($l, "\0").as_bytes()) }
     };
 }
 
 fn main() -> anyhow::Result<()> {
     //let _ = unsafe { Entry::builder(1, 0, 0).build_in("/opt/homebrew/Cellar/molten-vk/1.2.1/lib/libMoltenVK.dylib") }?;
-    let _ = unsafe { Entry::builder(1, 1, 0).build() }?;
+    let _ = unsafe {
+        Entry::builder(1, 1, 0)
+            .build()
+    }?;
 
     let phy = PhysicalDevice::first()?;
     let family = phy.families().next().unwrap();
-    let (dev, mut queues) = Device::builder(phy).queues(&[1f32]).build().build()?;
+    let (dev, mut queues) = Device::builder(phy)
+        .queues(&[1f32]).build()
+        .build()?;
+    let mut pool = CommandPool::new(&dev, family, CommandPoolFlags::empty(), 1, CommandBufferLevel::Primary)?;
 
     let alloc = Page::new(&dev, 2048, MemoryFlags::MAPABLE)?;
-    let mut people = Buffer::<Person, _>::new_uninit(
+    let mut people = Buffer::new_uninit(
         5,
         UsageFlags::STORAGE_BUFFER,
         BufferFlags::empty(),
@@ -55,34 +62,42 @@ fn main() -> anyhow::Result<()> {
     )?;
 
     let mut people_map = people.map_mut(..)?;
-    for person in people_map.iter_mut() {
-        let _ = person.write(Person {
-            is_male: true,
-            age: todo!(),
-            cordiality_intelligence: todo!(),
-            knowledge_finesse: todo!(),
-            gullability_health: todo!(),
-        });
+    for (i, person) in people_map.iter_mut().enumerate() {
+        let _ = person.write(Person::new(true, i as u16, 10, 10, 10, 10, 10, 10));
+    }
+    drop(people_map);
+    let mut people = unsafe { people.assume_init() };
+    
+    let mut main = setup_main(&dev)?;
+    call_gpu_main(&mut people, &mut main, &mut pool, &mut queues[0])?;
+
+    let my_people = people.map(..)?;
+    for person in my_people.iter() {
+        println!("{person:#?}")
     }
 
     Ok(())
 }
 
+fn setup_main<'a> (dev: &'a Device) -> vulkan::Result<Pipeline<'a>> {
+    const SHADER: &[u32] = include_spv!("gpu.spv");
+    #[cfg(debug_assertions)]
+    println!("Shader path: {}", env!("gpu.spv"));
+
+    return ComputeBuilder::new(dev)
+        .entry(cstr!("main_cs"))
+        .binding(DescriptorType::StorageBuffer, 1)
+        .build(SHADER);
+}
+
 fn call_gpu_main<A: DeviceAllocator>(
     input: &mut Buffer<Person, A>,
+    pipeline: &mut Pipeline,
     pool: &mut CommandPool,
     queue: &mut Queue,
 ) -> anyhow::Result<()> {
-    const SHADER: &[u32] = include_spv!("gpu.spv");
-    let dev = pool.device();
-
-    let mut pipeline = ComputeBuilder::new(&dev)
-        .binding(DescriptorType::StorageBuffer, 1)
-        .binding(DescriptorType::StorageBuffer, 1)
-        .build(SHADER)?;
-
     let set = pipeline.sets().first().unwrap();
-    let input_desc = set.write_descriptor(&input, 0);
+    let input_desc = set.write_descriptor(input, 0);
     pipeline.sets_mut().update(&[input_desc]);
 
     let mut cmd_buff = pool.begin_mut(0, CommandBufferUsage::ONE_TIME_SUBMIT)?;
@@ -90,7 +105,10 @@ fn call_gpu_main<A: DeviceAllocator>(
     cmd_buff.dispatch(u64_to_u32(input.len()), 1, 1);
     drop(cmd_buff);
 
-    let mut fence = Fence::new(&dev, FenceFlags::empty())?;
-    fence.bind_and_wait(pool, queue, None, None);
+    //std::thread::sleep(std::time::Duration::from_secs(2));
+    let mut fence = Fence::new(pipeline.device(), FenceFlags::empty())?;
+    fence.bind_to(pool, queue, None)?;
+    fence.wait(None)?;
+
     return Ok(());
 }

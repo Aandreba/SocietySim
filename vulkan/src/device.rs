@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}, hash::Hash};
+use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}, hash::Hash, ffi::CStr};
 use crate::{Result, Entry, queue::{Queue}, physical_dev::{PhysicalDevice, Family}, utils::usize_to_u32};
 
 #[derive(Debug)]
@@ -51,7 +51,7 @@ impl Drop for Device {
 pub struct Builder<'a> {
     inner: vk::DeviceCreateInfo,
     parent: PhysicalDevice,
-    _phtm: PhantomData<&'a vk::PhysicalDeviceFeatures>
+    _phtm: PhantomData<(&'a vk::PhysicalDeviceFeatures, &'a CStr)>
 }
 
 impl<'a> Builder<'a> {
@@ -83,6 +83,23 @@ impl<'a> Builder<'a> {
     #[inline]
     pub fn queues (self, priorities: &'a [f32]) -> QueueBuilder<'a> {
         return QueueBuilder::new(self, priorities)
+    }
+
+    #[inline]
+    pub fn extensions<I: IntoIterator<Item = &'a CStr>> (mut self, iter: I) -> Self {
+        if self.inner.enabledExtensionCount > 0 && !self.inner.ppEnabledExtensionNames.is_null() {
+            unsafe {
+                let _ = Box::from_raw(core::slice::from_raw_parts_mut(
+                    self.inner.ppEnabledExtensionNames.cast_mut(),
+                    self.inner.enabledExtensionCount as usize
+                ));
+            }
+        }
+
+        let ext = iter.into_iter().map(CStr::as_ptr).collect::<Box<[_]>>();
+        self.inner.enabledExtensionCount = usize_to_u32(ext.len());
+        self.inner.ppEnabledExtensionNames = Box::into_raw(ext).cast();
+        self
     }
 
     pub fn build (self) -> Result<(Device, Vec<Queue>)> {
@@ -133,6 +150,14 @@ impl Drop for Builder<'_> {
             if !self.inner.pQueueCreateInfos.is_null() {
                 let _ = Box::from_raw(self.inner.pQueueCreateInfos.cast_mut());
             }
+
+            if self.inner.enabledExtensionCount > 0 && !self.inner.ppEnabledExtensionNames.is_null() {
+                let _ = Box::from_raw(core::slice::from_raw_parts_mut(
+                    self.inner.ppEnabledExtensionNames.cast_mut(),
+                    self.inner.enabledExtensionCount as usize
+                ));
+            }
+
             let _ = Box::from_raw(self.inner.pEnabledFeatures.cast_mut());
         }
     }
