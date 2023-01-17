@@ -1,7 +1,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(ptr_metadata)]
+#![feature(ptr_metadata, rustc_attrs)]
 
 use vulkan::{Entry, device::{Device}, physical_dev::PhysicalDevice, pipeline::{ComputeBuilder}, descriptor::{DescriptorType}, buffer::{Buffer, UsageFlags, BufferFlags}, alloc::{MemoryFlags, Page}, pool::{CommandPool, CommandPoolFlags, CommandBufferLevel, CommandBufferUsage, PipelineBindPoint}, queue::{Fence, FenceFlags}, include_spv};
+pub mod game;
 
 #[macro_export]
 macro_rules! flat_mod {

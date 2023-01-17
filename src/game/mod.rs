@@ -1,11 +1,9 @@
-#[repr(u8)]
-pub enum Gender {
-    Male = 0,
-    Female = 1
-}
-
 #[repr(C)]
+#[non_exhaustive]
 pub struct Person {
-    gender: Gender,
-    charism: u8,
+    pub is_male: bool,
+    pub age: u16, // in weeks
+    pub cordiality_intelligence: u8,
+    pub knowledge_finesse: u8,
+    pub gullability_health: u8,
 }
