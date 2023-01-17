@@ -1,6 +1,6 @@
 #![feature(iterator_try_collect, iter_intersperse)]
 
-use std::{ffi::CString, ops::Deref};
+use std::{ffi::CString, ops::Deref, fs::File};
 use derive_syn_parse::Parse;
 use proc_macro2::{Span};
 use quote::{quote, format_ident};
@@ -10,6 +10,29 @@ use syn::{parse_macro_input, punctuated::Punctuated, Token, LitStr, LitByteStr};
 struct Input {
     #[call(Punctuated::parse_terminated)]
     inputs: Punctuated<LitStr, Token![,]>
+}
+
+#[proc_macro]
+pub fn include_spv (path: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    macro_rules! tri {
+        ($e:expr) => {
+            match $e {
+                Ok(x) => x,
+                Err(e) => return syn::Error::new(Span::call_site(), e).into_compile_error().into()
+            }
+        };
+    }
+
+    let path = parse_macro_input!(path as LitStr).value();
+    let mut file = tri!(File::open(&path));
+    
+    let spv = tri!(read_spv(&mut file));
+    let len = spv.len();
+
+    return quote! {{
+        static _SPV: [u32; #len] = [#(#spv),*]; 
+        &_SPV as &'static [u32; #len]
+    }}.into()
 }
 
 #[proc_macro]
@@ -113,4 +136,27 @@ fn by_parts (s: impl AsRef<str>) -> Vec<String> {
 
     if !current.is_empty() { result.push(current) }
     return result;
+}
+
+#[inline]
+fn read_spv (r: &mut File) -> std::io::Result<Vec<u32>> {
+    const WORD_SIZE: usize = core::mem::size_of::<u32>();
+
+    let mut words = Vec::<u32>::new();
+    loop {
+        let len = words.len();
+        words.reserve(1);
+
+        let bytes = unsafe {
+            core::slice::from_raw_parts_mut(words.as_mut_ptr().add(len).cast::<u8>(), WORD_SIZE)
+        };
+
+        match std::io::Read::read(r, bytes)? {
+            WORD_SIZE => unsafe { words.set_len(len + 1) },
+            0 => break,
+            _ => unreachable!()
+        }
+    }
+    
+    return Ok(words)
 }

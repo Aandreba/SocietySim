@@ -49,6 +49,7 @@ pub mod pool;
 //flat_mod! { alloc }
 
 pub type Result<T> = ::core::result::Result<T, error::Error>;
+pub use proc::{include_spv};
 
 use std::{marker::{PhantomData}, ffi::{CStr, OsStr, c_char}, ptr::{addr_of, addr_of_mut}, mem::transmute, num::NonZeroU64, fmt::Debug};
 use libloading::{Library};
@@ -68,7 +69,6 @@ const LIB_PATH: &str = "libvulkan.so";
 const LIB_PATH: &str = "libvulkan.dylib";
 
 static mut CURRENT_ENTRY: Option<Entry> = None;
-
 const ENTRY_POINT: &[u8] = b"vkGetInstanceProcAddr\0";
 const CREATE_INSTANCE: &CStr = unsafe { cstr!("vkCreateInstance") };
 

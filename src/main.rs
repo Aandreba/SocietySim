@@ -1,7 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata)]
 
-use vulkan::{Entry, device::{Device}, physical_dev::PhysicalDevice, pipeline::{ComputeBuilder}, descriptor::{DescriptorType, DescriptorPool}, utils::{read_spv}, buffer::{Buffer, UsageFlags, BufferFlags}, alloc::{MemoryFlags, Raw}, pool::{CommandPool, CommandPoolFlags, CommandBufferLevel, CommandBufferUsage, PipelineBindPoint}, queue::{Fence, FenceFlags}};
+use vulkan::{Entry, device::{Device}, physical_dev::PhysicalDevice, pipeline::{ComputeBuilder}, descriptor::{DescriptorType, DescriptorPool}, utils::{read_spv}, buffer::{Buffer, UsageFlags, BufferFlags}, alloc::{MemoryFlags, Raw}, pool::{CommandPool, CommandPoolFlags, CommandBufferLevel, CommandBufferUsage, PipelineBindPoint}, queue::{Fence, FenceFlags}, include_spv};
 
 #[macro_export]
 macro_rules! flat_mod {
@@ -39,13 +39,14 @@ fn main () -> anyhow::Result<()> {
     input.map(..)?.init_from_slice(&[1f32, 2f32, 3f32, 4f32, 5f32]);
     let input = unsafe { input.assume_init() };
 
-    let mut file = std::fs::File::open("target/main.spv")?;
-    let words = read_spv(&mut file)?;
+    let words = include_spv!("target/main.spv");
+    //let mut file = std::fs::File::open("target/main.spv")?;
+    //let words = read_spv(&mut file)?;
     
     let mut pipeline = ComputeBuilder::new(&dev)
         .binding(DescriptorType::StorageBuffer, 1)
         .binding(DescriptorType::StorageBuffer, 1)
-        .build(&words)?;
+        .build(words)?;
     
     let set = pipeline.sets().first().unwrap();
     let input_desc = set.write_descriptor(&input, 0);
