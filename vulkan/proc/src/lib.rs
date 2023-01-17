@@ -24,14 +24,14 @@ pub fn include_spv (path: proc_macro::TokenStream) -> proc_macro::TokenStream {
     }
 
     let path = parse_macro_input!(path as LitStr).value();
+    let path = tri!(std::env::var(&path));
     let mut file = tri!(File::open(&path));
     
     let spv = tri!(read_spv(&mut file));
     let len = spv.len();
 
     return quote! {{
-        static _SPV: [u32; #len] = [#(#spv),*]; 
-        &_SPV as &'static [u32; #len]
+        &[#(#spv),*] as &'static [u32; #len]
     }}.into()
 }
 

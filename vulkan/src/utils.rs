@@ -8,7 +8,21 @@ use futures::{AsyncRead, AsyncReadExt};
 /// This method will panic when, in debug mode, the `usize` value doesn't fit inside a `u32`.
 /// In release mode, the value will be truncated.
 #[inline(always)]
-pub(crate) fn usize_to_u32 (v: usize) -> u32 {
+pub fn usize_to_u32 (v: usize) -> u32 {
+    #[cfg(debug_assertions)]
+    return u32::try_from(v).unwrap();
+    #[cfg(not(debug_assertions))]
+    return v as u32
+}
+
+
+/// Casts `u64` to `u32`
+/// 
+/// # Panics
+/// This method will panic when, in debug mode, the `u64` value doesn't fit inside a `u32`.
+/// In release mode, the value will be truncated.
+#[inline(always)]
+pub fn u64_to_u32 (v: u64) -> u32 {
     #[cfg(debug_assertions)]
     return u32::try_from(v).unwrap();
     #[cfg(not(debug_assertions))]
@@ -21,7 +35,7 @@ pub(crate) fn usize_to_u32 (v: usize) -> u32 {
 /// This method will panic when, in debug mode, the `u64` value doesn't fit inside a `usize`.
 /// In release mode, the value will be truncated.
 #[inline(always)]
-pub(crate) fn u64_to_usize (v: u64) -> usize {
+pub fn u64_to_usize (v: u64) -> usize {
     #[cfg(debug_assertions)]
     return usize::try_from(v).unwrap();
     #[cfg(not(debug_assertions))]

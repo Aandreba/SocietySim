@@ -12,7 +12,10 @@ anyhow = "1.0.68"
 cfg-if = "1.0.0"
 docfg = "0.1.0"
 async-lock = "2.6.0"
-shared = { path = "../shared" }
+shared = { path = "shared" }
 
 [workspace]
 members = ["shared", "gpu", "vulkan", "vulkan/proc"]
+
+[build-dependencies]
+spirv-builder = "0.4.0"

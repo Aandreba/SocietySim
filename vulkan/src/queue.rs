@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, marker::PhantomData, ops::Range, sync::{RwLock, RwLockReadGuard, LockResult}, time::Duration};
+use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, marker::PhantomData, ops::Range, sync::{RwLock, RwLockReadGuard, LockResult}, time::Duration, slice::SliceIndex};
 use crate::{device::Device, Entry, Result, utils::usize_to_u32, pool::{CommandPool}};
 
 #[derive(Debug, PartialEq, Hash)]
@@ -38,7 +38,7 @@ pub struct SubmitBuilder<'a, 'b> {
 
 impl<'a, 'b> SubmitBuilder<'a, 'b> {
     #[inline]
-    pub fn add (mut self, pool: &'b CommandPool, buffers: Range<usize>, semaphores: Option<&'b [Semaphore<'a>]>) -> Self {
+    pub fn add<S: Clone + SliceIndex<[RwLock<()>], Output = [RwLock<()>]> + SliceIndex<[vk::CommandBuffer], Output = [vk::CommandBuffer]>> (mut self, pool: &'b CommandPool, buffers: S, semaphores: Option<&'b [Semaphore<'a>]>) -> Self {
         let semaphores = semaphores.into_iter().flatten().map(Semaphore::id).collect::<Vec<_>>();
         let locks = pool.locks[buffers.clone()].iter().map(RwLock::read).collect::<Vec<_>>();
         let buffers = &pool.buffers[buffers];
@@ -110,6 +110,13 @@ impl<'a> Fence<'a> {
     }
 
     #[inline]
+    pub fn bind_to<'b> (&mut self, pool: &'b mut CommandPool, queue: &mut Queue, semaphores: Option<&'b [Semaphore<'a>]>) -> Result<()> {
+        queue.submitter(Some(self))
+            .add(pool, .., semaphores)
+            .submit()
+    }
+
+    #[inline]
     pub fn wait (&self, timeout: Option<Duration>) -> Result<bool> {
         let timeout = match timeout {
             #[cfg(debug_assertions)]
@@ -130,6 +137,12 @@ impl<'a> Fence<'a> {
             vk::TIMEOUT => Ok(false),
             e => Err(e.into())
         }
+    }
+
+    #[inline]
+    pub fn bind_and_wait<'b> (&mut self, pool: &'b mut CommandPool, queue: &mut Queue, semaphores: Option<&'b [Semaphore<'a>]>, timeout: Option<Duration>) -> Result<bool> {
+        self.bind_to(pool, queue, semaphores)?;
+        return self.wait(timeout)
     }
 }
 
