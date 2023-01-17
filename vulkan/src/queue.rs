@@ -2,20 +2,20 @@ use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, marker::PhantomData, ops
 use crate::{device::Device, Entry, Result, utils::usize_to_u32, pool::{CommandPool}};
 
 #[derive(Debug, PartialEq, Hash)]
-pub struct Queue<'a> {
+pub struct Queue {
     pub(super) inner: NonZeroU64,
     pub(super) index: u32,
-    pub(super) parent: &'a Device
+    //pub(super) parent: &'a Device
 }
 
-impl<'a> Queue<'a> {
+impl Queue {
     #[inline]
     pub fn id (&self) -> u64 {
         return self.inner.get()
     }
 
     #[inline]
-    pub fn submitter<'b> (&'b mut self, fence: &'b mut Fence<'a>) -> SubmitBuilder<'a, 'b> {
+    pub fn submitter<'a, 'b> (&'b mut self, fence: Option<&'b mut Fence<'a>>) -> SubmitBuilder<'a, 'b> {
         return SubmitBuilder {
             queue: self,
             fence,
@@ -28,8 +28,8 @@ impl<'a> Queue<'a> {
 }
 
 pub struct SubmitBuilder<'a, 'b> {
-    queue: &'b mut Queue<'a>,
-    fence: &'b mut Fence<'a>,
+    queue: &'b mut Queue,
+    fence: Option<&'b mut Fence<'a>>,
     submits: Vec<vk::SubmitInfo>,
     locks: Vec<Vec<LockResult<RwLockReadGuard<'b, ()>>>>,
     semaphores: Vec<Vec<vk::Semaphore>>,
@@ -67,7 +67,7 @@ impl<'a, 'b> SubmitBuilder<'a, 'b> {
                 self.queue.id(),
                 usize_to_u32(self.submits.len()),
                 self.submits.as_ptr(),
-                self.fence.id()
+                self.fence.map_or(vk::NULL_HANDLE, |x| x.id())
             )
         }
         return Ok(())

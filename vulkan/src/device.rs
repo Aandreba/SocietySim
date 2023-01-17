@@ -1,11 +1,28 @@
-use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}};
+use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}, hash::Hash};
 use crate::{Result, Entry, queue::{Queue}, physical_dev::{PhysicalDevice, Family}, utils::usize_to_u32};
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug)]
 pub struct Device {
     inner: NonZeroU64,
     parent: PhysicalDevice
 }
+
+impl PartialEq for Device {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner && self.parent == other.parent
+    }
+}
+
+impl Hash for Device {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.inner.hash(state);
+        self.parent.hash(state);
+    }
+}
+
+impl Eq for Device {}
 
 impl Device {
     #[inline]
@@ -21,18 +38,6 @@ impl Device {
     #[inline]
     pub fn physical (&self) -> PhysicalDevice {
         return self.parent
-    }
-
-    #[inline]
-    pub fn get_queue<'a> (&'a self, family: Family, idx: u32) -> Result<Queue<'a>> {
-        let mut queue = 0;
-        (Entry::get().get_device_queue)(self.id(), family.idx(), idx, addr_of_mut!(queue));
-
-        if let Some(inner) = NonZeroU64::new(queue) {
-            return Ok(Queue { inner, parent: self, index: idx });
-        } else {
-            return Err(vk::ERROR_UNKNOWN.into())
-        }
     }
 }
 
@@ -80,17 +85,44 @@ impl<'a> Builder<'a> {
         return QueueBuilder::new(self, priorities)
     }
 
-    pub fn build (self) -> Result<Device> {
+    pub fn build (self) -> Result<(Device, Vec<Queue>)> {
         let entry = Entry::get();
+
         let mut result: vk::Device = 0;
         tri! {
             (entry.create_device)(self.parent.id(), addr_of!(self.inner), core::ptr::null_mut(), addr_of_mut!(result))
         };
 
         if let Some(inner) = NonZeroU64::new(result) {
-            return Ok(Device { inner, parent: self.parent })
+            let mut queues = Vec::new();
+            if self.inner.queueCreateInfoCount > 0 && !self.inner.pQueueCreateInfos.is_null() {
+                let infos = unsafe {
+                    core::slice::from_raw_parts(
+                        self.inner.pQueueCreateInfos,
+                        self.inner.queueCreateInfoCount as usize
+                    )
+                };
+
+                for info in infos {
+                    queues.reserve(info.queueCount as usize);
+
+                    for i in 0..info.queueCount {
+                        let mut queue = 0;
+                        (entry.get_device_queue)(inner.get(), info.queueFamilyIndex, i, addr_of_mut!(queue));
+
+                        if let Some(inner) = NonZeroU64::new(queue) {
+                            queues.push(Queue { inner, index: i });
+                        } else {
+                            return Err(vk::ERROR_UNKNOWN.into())
+                        }
+                    }
+                }
+            }
+
+            return Ok((Device { inner, parent: self.parent }, queues))
         }
-        return Err(vk::ERROR_INITIALIZATION_FAILED.into())
+
+        return Err(vk::ERROR_UNKNOWN.into())
     }
 }
 

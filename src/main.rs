@@ -29,7 +29,7 @@ fn main () -> anyhow::Result<()> {
     
     let phy = PhysicalDevice::first()?;
     let family = phy.families().next().unwrap();
-    let dev = Device::builder(phy)
+    let (dev, mut queues) = Device::builder(phy)
         .queues(&[1f32]).build()
         .build()?;
 
@@ -63,7 +63,7 @@ fn main () -> anyhow::Result<()> {
     drop(cmd_buff);
 
     let mut fence = Fence::new(&dev, FenceFlags::empty())?;
-    dev.get_queue(family, 0)?.submitter(&mut fence)
+    queues.first_mut().unwrap().submitter(Some(&mut fence))
         .add(&cmds, 0..1, None)
         .submit()?;
 

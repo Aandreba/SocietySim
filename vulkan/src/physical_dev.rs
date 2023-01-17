@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, ptr::addr_of_mut, ffi::CStr, fmt::Debug, mem::MaybeUninit};
+use std::{num::NonZeroU64, ptr::addr_of_mut, ffi::CStr, fmt::Debug, mem::MaybeUninit, hash::Hash};
 use crate::{vk, Entry, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -191,6 +191,13 @@ pub struct Family {
     idx: u32,
     inner: vk::QueueFamilyProperties,
     parent: PhysicalDevice,
+}
+
+impl PartialEq for Family {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.idx == other.idx && self.parent == other.parent
+    }
 }
 
 impl Family {
