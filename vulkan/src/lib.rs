@@ -107,6 +107,7 @@ proc::entry! {
     "vkQueueSubmit",
     "vkWaitForFences",
     "vkEnumerateInstanceExtensionProperties",
+    "vkCmdPushConstants",
     // Destructors
     "vkDestroyInstance",
     "vkDestroyDevice",

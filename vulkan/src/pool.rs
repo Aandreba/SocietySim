@@ -1,5 +1,5 @@
-use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, sync::{TryLockError, RwLockWriteGuard, RwLock, RwLockReadGuard}, marker::PhantomData, ops::{RangeBounds, Bound, Deref, Index}, slice::SliceIndex};
-use crate::{Result, Entry, physical_dev::Family, device::{Device, DeviceRef}, utils::usize_to_u32, pipeline::Pipeline, descriptor::{DescriptorSet}};
+use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, sync::{TryLockError, RwLockWriteGuard, RwLock, RwLockReadGuard}, marker::PhantomData, ops::{RangeBounds, Bound, Deref, Index}, slice::SliceIndex, ffi::c_void};
+use crate::{Result, Entry, physical_dev::Family, device::{Device, DeviceRef}, utils::usize_to_u32, pipeline::Pipeline, descriptor::{DescriptorSet}, shader::ShaderStages};
 
 #[derive(Debug)]
 pub struct CommandPool<D: DeviceRef> {
@@ -170,13 +170,13 @@ enum CommandLock<'a> {
 #[derive(Debug)]
 pub struct Command<'a, P: DeviceRef> {
     inner: vk::CommandBuffer,
-    _lock: CommandLock<'a>,
-    _phtm: PhantomData<&'a Pipeline<P>>
+    pipeline: Option<&'a Pipeline<P>>,
+    _lock: CommandLock<'a>
 }
 
 impl<'a, P: DeviceRef> Command<'a, P> {
     fn new (inner: vk::CommandBuffer, lock: CommandLock<'a>, flags: CommandBufferUsage) -> Result<Self> {
-        let this = Self { inner, _lock: lock, _phtm: PhantomData };
+        let this = Self { inner, pipeline: None, _lock: lock };
         let info = vk::CommandBufferBeginInfo {
             sType: vk::STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             pNext: core::ptr::null(),
@@ -194,6 +194,20 @@ impl<'a, P: DeviceRef> Command<'a, P> {
     #[inline]
     pub fn id (&self) -> vk::CommandBuffer {
         return self.inner
+    }
+
+    #[inline]
+    pub fn push_contant<T: Copy> (&mut self, value: &T, stages: ShaderStages) -> Result<()> {
+        let pipeline = self.pipeline.ok_or(vk::ERROR_NOT_PERMITTED_KHR)?;
+        (Entry::get().cmd_push_constants)(
+            self.id(),
+            pipeline.layout(),
+            stages.bits(),
+            0,
+            usize_to_u32(core::mem::size_of::<T>()),
+            value as *const T as *const c_void
+        );
+        return Ok(())
     }
 
     #[inline]
@@ -228,6 +242,7 @@ impl<'a, P: DeviceRef> Command<'a, P> {
             0,
             core::ptr::null()
         );
+        self.pipeline = Some(pipeline);
     }
 
     #[inline]

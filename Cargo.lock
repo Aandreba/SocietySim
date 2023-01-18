@@ -294,7 +294,6 @@ dependencies = [
 name = "gpu"
 version = "0.1.0"
 dependencies = [
- "rand",
  "shared",
  "spirv-std",
 ]
@@ -761,6 +760,7 @@ dependencies = [
  "cfg-if",
  "glam",
  "serde",
+ "spirv-std",
 ]
 
 [[package]]
@@ -798,6 +798,7 @@ dependencies = [
  "async-lock",
  "cfg-if",
  "docfg",
+ "rand",
  "shared",
  "spirv-builder",
  "tokio",
@@ -1003,6 +1004,7 @@ dependencies = [
  "proc",
  "rand",
  "rand_derive2",
+ "serde",
  "thiserror",
  "tokio",
  "vulkan-bindings",

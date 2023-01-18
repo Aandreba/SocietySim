@@ -1,44 +1,46 @@
-#![cfg_attr(target_arch = "spirv", no_std, feature(asm_experimental_arch))]
+#![cfg_attr(target_arch = "spirv", no_std, feature(asm_experimental_arch, asm_const))]
+#![feature(bigint_helper_methods)]
 // HACK(eddyb) can't easily see warnings otherwise from `spirv-builder` builds.
 #![deny(warnings)]
 
-use shared::{person::{Person, PersonStats}, person_event::PersonalEvent};
-use spirv_std::{spirv, glam::UVec3};
+pub mod rand;
+pub mod math;
 
-const CUSTOM_EVENT: PersonalEvent = PersonalEvent {
-    duration: None,
-    base_chance: 0.75f32,
+use shared::{person::{Person}, person_event::PersonalEvent, ExternBool};
+use spirv_std::{spirv, glam::{UVec3}, macros::debug_printfln};
 
-    chance: PersonStats {
-        cordiality: 1f32,
-        intelligence: 0f32,
-        knowledge: 0f32,
-        finesse: 0f32,
-        gullability: 0f32,
-        health: 0f32,
-    },
+use crate::rand::Random3;
 
-    effects: PersonStats {
-        cordiality: 1,
-        intelligence: 0,
-        knowledge: 0,
-        finesse: 0,
-        gullability: 0,
-        health: -1,
-    },
-};
+// Regular odds (1f32 chance) will result in true once every 100 ticks (approximately, obviously) 
+//const BASE_CHANCE: f32 = 1f32 / 100f32;
+const BASE_CHANCE: f32 = 1f32;
 
-#[spirv(compute(threads(1, 1, 1)))]
-pub fn main_cs(
+// #[spirv(compute(threads(1)))]
+// pub fn main_cs(
+//     #[spirv(global_invocation_id)] id: UVec3,
+//     #[spirv(storage_buffer, descriptor_set = 0, binding = 0)] people: &mut [Person],
+// ) {
+//     let person = &mut people[id.x as usize];
+//     person.age = GameDuration::default();
+// }
+
+// x = # of people, y = # of events
+#[spirv(compute(threads(1, 1)))]
+pub fn compute_personal_event(
     #[spirv(global_invocation_id)] id: UVec3,
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 0)] people: &mut [Person],
+    #[spirv(push_constant)] _seed: &f32,
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 0)] people: &[Person],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] events: &[PersonalEvent],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 2)] results: &mut [ExternBool], // [_; x * y]
 ) {
-    let person = &mut people[id.x as usize];
-    let chance = CUSTOM_EVENT.calculate_chance(*person);
-    if 0.01f32 < chance {
-        person.stats.health = person.stats.health + (CUSTOM_EVENT.effects.health as u8);
-    } else {
-        person.stats.health = (chance * 100f32) as u8;
-        person.age = id.x as u16;
+    let seed = &36f32;
+    let person = &people[id.x as usize];
+    let event = &events[id.y as usize];
+    let chance = BASE_CHANCE * event.calculate_chance(*person);
+    unsafe { debug_printfln!("%f", chance) }
+
+    if Random3::generate(id.x as f32, id.y as f32, *seed) < chance {
+        let idx = (id.x as usize) * events.len() + (id.y as usize);
+        results[idx].set()
     }
 }

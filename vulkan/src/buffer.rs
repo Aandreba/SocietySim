@@ -1,4 +1,5 @@
 use std::{marker::PhantomData, num::{NonZeroU64}, ptr::{addr_of, addr_of_mut, NonNull}, mem::{MaybeUninit, ManuallyDrop}, ops::{Deref, DerefMut, RangeBounds, Bound}, fmt::Debug};
+use serde::de::DeserializeOwned;
 use vk::{DeviceSize};
 use crate::{Result, Entry, device::{Device}, alloc::{DeviceAllocator, MemoryPtr, MemoryFlags}, utils::u64_to_usize};
 
@@ -52,6 +53,20 @@ impl<T, A: DeviceAllocator> Buffer<T, A> {
     }
 
     #[inline]
+    pub fn from_sized_iter<I: IntoIterator<Item = T>> (iter: I, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<T, A>> where I::IntoIter: ExactSizeIterator {
+        let iter = iter.into_iter();
+        let mut this = Self::new_uninit(iter.len() as u64, usage, flags, memory_flags, alloc)?;
+        
+        let mut map = this.map_mut(..)?;
+        for (map, value) in map.iter_mut().zip(iter) {
+            let _ = map.write(value);
+        }
+        drop(map);
+        
+        return unsafe { Ok(this.assume_init()) }
+    }
+
+    #[inline]
     pub fn id (&self) -> u64 {
         return self.buffer.get()
     }
@@ -65,10 +80,15 @@ impl<T, A: DeviceAllocator> Buffer<T, A> {
     pub fn len (&self) -> u64 {
         return self.size() / Self::BYTES_PER_ELEMENT
     }
-
+    
     #[inline]
     pub fn device (&self) -> &Device {
         return self.alloc.device()
+    }
+
+    #[inline]
+    pub fn alloc (&self) -> &A {
+        return &self.alloc
     }
 
     #[inline]

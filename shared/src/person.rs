@@ -1,8 +1,9 @@
 use core::simd::{SimdElement, Simd};
-use crate::ExternBool;
+use crate::{ExternBool, time::GameDuration};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(not(target_arch = "spirv"), derive(Debug, serde::Serialize, serde::Deserialize))]
+#[repr(C)]
 pub struct PersonStats<T> {
     pub cordiality: T,
     pub intelligence: T,
@@ -24,9 +25,9 @@ impl<T> PersonStats<T> {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(not(target_arch = "spirv"), derive(Debug))]
-#[non_exhaustive]
+#[repr(C)]
 pub struct Person {
     pub is_male: ExternBool,
-    pub age: u16, // in weeks
+    pub age: GameDuration, // in weeks
     pub stats: PersonStats<u8>
 }

@@ -9,4 +9,3 @@ crate-type = ["dylib", "lib"]
 [dependencies]
 spirv-std = { version = "0.4.0", features = ["glam"] }
 shared = { path = "../shared" }
-rand = { version = "0.8.5", default-features = false, features = ["nightly"] }

@@ -39,14 +39,14 @@ impl<D: DeviceRef> Drop for Shader<D> {
 pub struct Builder<'a, D> {
     pub(crate) bindings: Vec<vk::DescriptorSetLayoutBinding>,
     pub(crate) flags: LayoutCreateFlags,
-    pub(crate) stage: ShaderStage,
+    pub(crate) stage: ShaderStages,
     pub(crate) device: D,
     pub(crate) entry: &'a CStr
 }
 
 impl<'a, D: DeviceRef> Builder<'a, D> {
     #[inline]
-    pub fn new (device: D, stage: ShaderStage) -> Self {
+    pub fn new (device: D, stage: ShaderStages) -> Self {
         return Self {
             bindings: Vec::new(),
             flags: LayoutCreateFlags::empty(),
@@ -135,7 +135,7 @@ impl<'a, D: DeviceRef> Builder<'a, D> {
 
 bitflags::bitflags! {
     #[repr(transparent)]
-    pub struct ShaderStage: vk::ShaderStageFlagBits {
+    pub struct ShaderStages: vk::ShaderStageFlagBits {
         const VERTEX = vk::SHADER_STAGE_VERTEX_BIT;
         const TESSELLATION_CONTROL = vk::SHADER_STAGE_TESSELLATION_CONTROL_BIT;
         const TESSELLATION_EVALUATION = vk::SHADER_STAGE_TESSELLATION_EVALUATION_BIT;

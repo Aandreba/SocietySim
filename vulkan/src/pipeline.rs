@@ -1,5 +1,5 @@
 use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ffi::CStr};
-use crate::{shader::{LayoutCreateFlags, ShaderStage, Shader}, Entry, Result, device::{Device, DeviceRef}, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSets}};
+use crate::{shader::{LayoutCreateFlags, ShaderStages, Shader}, Entry, Result, device::{Device, DeviceRef}, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSets}};
 
 const DEFAULT_ENTRY: &CStr = unsafe { cstr!("main") };
 
@@ -133,7 +133,7 @@ impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
                 sType: vk::STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                 pNext: core::ptr::null(),
                 flags: 0,
-                stage: ShaderStage::COMPUTE.bits(),
+                stage: ShaderStages::COMPUTE.bits(),
                 module: shader.module(),
                 pName: self.entry.as_ptr(),
                 pSpecializationInfo: core::ptr::null(),
@@ -178,7 +178,7 @@ impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
         let builder = crate::shader::Builder {
             bindings: core::mem::take(&mut self.bindings),
             flags: self.layout_flags,
-            stage: ShaderStage::COMPUTE,
+            stage: ShaderStages::COMPUTE,
             device: self.device.clone(),
             entry: self.entry,
         };

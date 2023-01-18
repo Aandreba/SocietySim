@@ -1,7 +1,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata, rustc_attrs)]
 
-use shared::person::Person;
+use rand::{thread_rng, Rng, random};
+use shared::{person::{Person, PersonStats}, person_event::PersonalEvent, ExternBool, time::GameDuration};
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags, Page},
     buffer::{Buffer, BufferFlags, UsageFlags},
@@ -17,6 +18,10 @@ use vulkan::{
     utils::u64_to_u32,
     Entry, extension_props,
 };
+
+const WORDS: &[u32] = include_spv!("gpu.spv");
+
+use crate::game::personal_events::PersonalEvents;
 pub mod game;
 
 #[macro_export]
@@ -56,42 +61,86 @@ fn main() -> anyhow::Result<()> {
     let mut pool = CommandPool::new(&dev, family, CommandPoolFlags::empty(), 1, CommandBufferLevel::Primary)?;
 
     let alloc = Page::new(&dev, 2048, MemoryFlags::MAPABLE)?;
-    let mut people = Buffer::new_uninit(
-        5,
+    let people = Buffer::from_sized_iter(
+        (0..50).into_iter().map(|_| {
+            let is_male = random::<bool>();
+            let age = random::<u8>() / 100;
+            let cordiality = random::<u8>();
+            let intelligence = random::<u8>();
+            let knowledge = random::<u8>();
+            let finesse = random::<u8>();
+            let gullability = random::<u8>();
+            let health = random::<u8>();
+
+            Person {
+                is_male: ExternBool::new(is_male),
+                age: GameDuration::from_years(age),
+                stats: PersonStats {
+                    cordiality,
+                    intelligence,
+                    knowledge,
+                    finesse,
+                    gullability,
+                    health,
+                },
+            }
+        }),
         UsageFlags::STORAGE_BUFFER,
         BufferFlags::empty(),
         MemoryFlags::MAPABLE,
         &alloc,
     )?;
-
-    let mut people_map = people.map_mut(..)?;
-    for (i, person) in people_map.iter_mut().enumerate() {
-        let person = person.write(Person::default());
-        person.stats.cordiality = i as u8; 
-    }
-    drop(people_map);
-    let mut people = unsafe { people.assume_init() };
+    let events = Buffer::from_sized_iter(
+        [PersonalEvent {
+            duration: None,
+            chance: PersonStats {
+                cordiality: 0.5f32,
+                intelligence: 0.25f32,
+                knowledge: 0.25f32,
+                finesse: 0f32,
+                gullability: 0f32,
+                health: 0f32,
+            },
+            effects: PersonStats {
+                cordiality: 1,
+                intelligence: 0,
+                knowledge: 0,
+                finesse: 0,
+                gullability: 0,
+                health: 0,
+            },
+        }],
+        UsageFlags::STORAGE_BUFFER,
+        BufferFlags::empty(),
+        // MemoryFlags::DEVICE_LOCAL,
+        MemoryFlags::MAPABLE,
+        &alloc,
+    )?;
     
-    let mut main = setup_main(&dev)?;
-    call_gpu_main(&mut people, &mut main, &mut pool, &mut queues[0])?;
+    let mut evt = PersonalEvents::new(&dev, WORDS)?;
+    let result = evt.call(&people, &events, &mut pool, queues.first_mut().unwrap())?;
 
-    let my_people = people.map(..)?;
-    for person in my_people.iter() {
-        println!("{person:#?}")
-    }
+    let result = result.map(..)?;
+    println!("{:#?}", &result as &[ExternBool]);
+
+    // let mut main = setup_main(&dev)?;
+    // call_gpu_main(&mut people, &mut main, &mut pool, &mut queues[0])?;
+    // let my_people = people.map(..)?;
+    // for person in my_people.iter() {
+    //     println!("{person:#?}")
+    // }
 
     Ok(())
 }
 
 fn setup_main<D: Clone + DeviceRef> (dev: D) -> vulkan::Result<Pipeline<D>> {
-    const SHADER: &[u32] = include_spv!("gpu.spv");
     #[cfg(debug_assertions)]
     println!("Shader path: {}", env!("gpu.spv"));
 
     return ComputeBuilder::new(dev)
         .entry(cstr!("main_cs"))
         .binding(DescriptorType::StorageBuffer, 1)
-        .build(SHADER);
+        .build(WORDS);
 }
 
 fn call_gpu_main<A: DeviceAllocator, Pi: DeviceRef, Po: DeviceRef>(

@@ -52,9 +52,12 @@ impl<M: MemoryMetadata> MemoryPtr<M> {
 }
 
 pub unsafe trait DeviceAllocator {
+    type Device: DeviceRef;
     type Metadata: MemoryMetadata;
 
+    fn owned_device (&self) -> Self::Device where Self::Device: Clone;
     fn device(&self) -> &Device;
+    
     fn allocate(
         &self,
         size: vk::DeviceSize,
@@ -73,7 +76,13 @@ pub unsafe trait DeviceAllocator {
 }
 
 unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for &T {
+    type Device = T::Device;
     type Metadata = T::Metadata;
+
+    #[inline]
+    fn owned_device (&self) -> Self::Device where Self::Device: Clone {
+        return T::owned_device(*self)
+    }
 
     #[inline]
     fn device(&self) -> &Device {
@@ -107,7 +116,13 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for &T {
 }
 
 unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Box<T> {
+    type Device = T::Device;
     type Metadata = T::Metadata;
+
+    #[inline]
+    fn owned_device (&self) -> Self::Device where Self::Device: Clone {
+        return T::owned_device(self)
+    }
 
     #[inline]
     fn device(&self) -> &Device {
@@ -141,7 +156,13 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Box<T> {
 }
 
 unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Rc<T> {
+    type Device = T::Device;
     type Metadata = T::Metadata;
+
+    #[inline]
+    fn owned_device (&self) -> Self::Device where Self::Device: Clone {
+        return T::owned_device(self)
+    }
 
     #[inline]
     fn device(&self) -> &Device {
@@ -175,7 +196,13 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Rc<T> {
 }
 
 unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Arc<T> {
+    type Device = T::Device;
     type Metadata = T::Metadata;
+
+    #[inline]
+    fn owned_device (&self) -> Self::Device where Self::Device: Clone {
+        return T::owned_device(self)
+    }
 
     #[inline]
     fn device(&self) -> &Device {
@@ -212,7 +239,13 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Arc<T> {
 struct RawInner<D> (pub D);
 
 unsafe impl<D: DeviceRef> DeviceAllocator for RawInner<D> {
+    type Device = D;
     type Metadata = RawInfo;
+
+    #[inline]
+    fn owned_device (&self) -> Self::Device where Self::Device: Clone {
+        return self.0.clone()
+    }
 
     #[inline]
     fn device(&self) -> &Device {
@@ -417,7 +450,13 @@ impl<D: DeviceRef> Page<D> {
 }
 
 unsafe impl<D: DeviceRef> DeviceAllocator for Page<D> {
+    type Device = D;
     type Metadata = PageInfo;
+
+    #[inline]
+    fn owned_device (&self) -> Self::Device where Self::Device: Clone {
+        return self.alloc.owned_device()
+    }
 
     #[inline]
     fn device(&self) -> &Device {
