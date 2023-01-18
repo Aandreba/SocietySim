@@ -6,6 +6,7 @@ const TARGET: &str = "spirv-unknown-vulkan1.1";
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     SpirvBuilder::new(CRATE, TARGET)
         .print_metadata(MetadataPrintout::Full)
+        //.release(!cfg!(debug_assertions))
         .extension("SPV_KHR_variable_pointers")
         .extension("SPV_KHR_non_semantic_info")
         .capability(Capability::Int8)
