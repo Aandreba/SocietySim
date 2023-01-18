@@ -35,7 +35,9 @@ pub fn main_cs(
 ) {
     let person = &mut people[id.x as usize];
     let chance = CUSTOM_EVENT.calculate_chance(*person);
-    if 1f32 < chance {
+    if 0.5f32 < chance {
         person.stats.health = person.stats.health + (CUSTOM_EVENT.effects.health as u8);
+    } else {
+        person.stats.health = chance as u8;
     }
 }

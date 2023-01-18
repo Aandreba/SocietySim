@@ -1,5 +1,5 @@
 use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, marker::PhantomData, sync::{RwLock, RwLockReadGuard, LockResult}, time::Duration, slice::SliceIndex};
-use crate::{device::Device, Entry, Result, utils::usize_to_u32, pool::{CommandPool}};
+use crate::{device::{DeviceRef, Device}, Entry, Result, utils::usize_to_u32, pool::{CommandPool}};
 
 #[derive(Debug, PartialEq, Hash)]
 pub struct Queue {
@@ -15,7 +15,7 @@ impl Queue {
     }
 
     #[inline]
-    pub fn submitter<'a, 'b> (&'b mut self, fence: Option<&'b mut Fence<'a>>) -> SubmitBuilder<'a, 'b> {
+    pub fn submitter<'a, F: DeviceRef, P: DeviceRef, S: DeviceRef> (&'a mut self, fence: Option<&'a mut Fence<F>>) -> SubmitBuilder<'a, F, P, S> {
         return SubmitBuilder {
             queue: self,
             fence,
@@ -27,18 +27,18 @@ impl Queue {
     }
 }
 
-pub struct SubmitBuilder<'a, 'b> {
-    queue: &'b mut Queue,
-    fence: Option<&'b mut Fence<'a>>,
+pub struct SubmitBuilder<'a, F: DeviceRef, P: DeviceRef, S: DeviceRef = &'a Device> {
+    queue: &'a mut Queue,
+    fence: Option<&'a mut Fence<F>>,
     submits: Vec<vk::SubmitInfo>,
-    locks: Vec<Vec<LockResult<RwLockReadGuard<'b, ()>>>>,
+    locks: Vec<Vec<LockResult<RwLockReadGuard<'a, ()>>>>,
     semaphores: Vec<Vec<vk::Semaphore>>,
-    _phtm: PhantomData<(&'b [Semaphore<'a>], &'b CommandPool<'a>)>
+    _phtm: PhantomData<(&'a [Semaphore<S>], &'a CommandPool<P>)>
 }
 
-impl<'a, 'b> SubmitBuilder<'a, 'b> {
+impl<'a, F: DeviceRef, S: DeviceRef, P: DeviceRef> SubmitBuilder<'a, F, P, S> {
     #[inline]
-    pub fn add<S: Clone + SliceIndex<[RwLock<()>], Output = [RwLock<()>]> + SliceIndex<[vk::CommandBuffer], Output = [vk::CommandBuffer]>> (mut self, pool: &'b CommandPool, buffers: S, semaphores: Option<&'b [Semaphore<'a>]>) -> Self {
+    pub fn add<B: Clone + SliceIndex<[RwLock<()>], Output = [RwLock<()>]> + SliceIndex<[vk::CommandBuffer], Output = [vk::CommandBuffer]>> (mut self, pool: &'a CommandPool<P>, buffers: B, semaphores: Option<&'a [Semaphore<S>]>) -> Self {
         let semaphores = semaphores.into_iter().flatten().map(Semaphore::id).collect::<Vec<_>>();
         let locks = pool.locks[buffers.clone()].iter().map(RwLock::read).collect::<Vec<_>>();
         let buffers = &pool.buffers[buffers];
@@ -75,13 +75,13 @@ impl<'a, 'b> SubmitBuilder<'a, 'b> {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct Fence<'a> {
+pub struct Fence<D: DeviceRef> {
     inner: NonZeroU64,
-    parent: &'a Device
+    parent: D
 }
 
-impl<'a> Fence<'a> {
-    pub fn new (parent: &'a Device, flags: FenceFlags) -> Result<Self> {
+impl<D: DeviceRef> Fence<D> {
+    pub fn new (parent: D, flags: FenceFlags) -> Result<Self> {
         let info = vk::FenceCreateInfo {
             sType: vk::STRUCTURE_TYPE_FENCE_CREATE_INFO,
             pNext: core::ptr::null(),
@@ -110,7 +110,7 @@ impl<'a> Fence<'a> {
     }
 
     #[inline]
-    pub fn bind_to<'b> (&mut self, pool: &'b mut CommandPool, queue: &mut Queue, semaphores: Option<&'b [Semaphore<'a>]>) -> Result<()> {
+    pub fn bind_to<'b, P: DeviceRef, S: DeviceRef> (&mut self, pool: &'b mut CommandPool<P>, queue: &mut Queue, semaphores: Option<&'b [Semaphore<S>]>) -> Result<()> {
         queue.submitter(Some(self))
             .add(pool, 0..1, semaphores)
             .submit()
@@ -140,13 +140,13 @@ impl<'a> Fence<'a> {
     }
 
     #[inline]
-    pub fn bind_and_wait<'b> (&mut self, pool: &'b mut CommandPool, queue: &mut Queue, semaphores: Option<&'b [Semaphore<'a>]>, timeout: Option<Duration>) -> Result<bool> {
+    pub fn bind_and_wait<'a, P: DeviceRef, S: DeviceRef> (&mut self, pool: &'a mut CommandPool<P>, queue: &mut Queue, semaphores: Option<&'a [Semaphore<S>]>, timeout: Option<Duration>) -> Result<bool> {
         self.bind_to(pool, queue, semaphores)?;
         return self.wait(timeout)
     }
 }
 
-impl Drop for Fence<'_> {
+impl<D: DeviceRef> Drop for Fence<D> {
     #[inline]
     fn drop(&mut self) {
         (Entry::get().destroy_fence)(
@@ -158,14 +158,14 @@ impl Drop for Fence<'_> {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct Semaphore<'a> {
+pub struct Semaphore<D: DeviceRef> {
     inner: NonZeroU64,
-    parent: &'a Device
+    parent: D
 }
 
-impl<'a> Semaphore<'a> {
+impl<D: DeviceRef> Semaphore<D> {
     #[inline]
-    pub fn new (parent: &'a Device) -> Result<Self> {
+    pub fn new (parent: D) -> Result<Self> {
         let info = vk::SemaphoreCreateInfo {
             sType: vk::STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
             pNext: core::ptr::null(),
@@ -194,7 +194,7 @@ impl<'a> Semaphore<'a> {
     }
 }
 
-impl Drop for Semaphore<'_> {
+impl<D: DeviceRef> Drop for Semaphore<D> {
     #[inline]
     fn drop(&mut self) {
         (Entry::get().destroy_semaphore)(

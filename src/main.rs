@@ -6,7 +6,7 @@ use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags, Page},
     buffer::{Buffer, BufferFlags, UsageFlags},
     descriptor::DescriptorType,
-    device::Device,
+    device::{Device, DeviceRef},
     include_spv,
     physical_dev::PhysicalDevice,
     pipeline::{ComputeBuilder, Pipeline},
@@ -65,8 +65,9 @@ fn main() -> anyhow::Result<()> {
     )?;
 
     let mut people_map = people.map_mut(..)?;
-    for (_, person) in people_map.iter_mut().enumerate() {
-        let _ = person.write(Person::default());
+    for (i, person) in people_map.iter_mut().enumerate() {
+        let person = person.write(Person::default());
+        person.stats.cordiality = i as u8; 
     }
     drop(people_map);
     let mut people = unsafe { people.assume_init() };
@@ -82,7 +83,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn setup_main<'a> (dev: &'a Device) -> vulkan::Result<Pipeline<'a>> {
+fn setup_main<D: Clone + DeviceRef> (dev: D) -> vulkan::Result<Pipeline<D>> {
     const SHADER: &[u32] = include_spv!("gpu.spv");
     #[cfg(debug_assertions)]
     println!("Shader path: {}", env!("gpu.spv"));
@@ -93,10 +94,10 @@ fn setup_main<'a> (dev: &'a Device) -> vulkan::Result<Pipeline<'a>> {
         .build(SHADER);
 }
 
-fn call_gpu_main<A: DeviceAllocator>(
+fn call_gpu_main<A: DeviceAllocator, Pi: DeviceRef, Po: DeviceRef>(
     input: &mut Buffer<Person, A>,
-    pipeline: &mut Pipeline,
-    pool: &mut CommandPool,
+    pipeline: &mut Pipeline<Pi>,
+    pool: &mut CommandPool<Po>,
     queue: &mut Queue,
 ) -> anyhow::Result<()> {
     let set = pipeline.sets().first().unwrap();
@@ -110,7 +111,7 @@ fn call_gpu_main<A: DeviceAllocator>(
 
     //std::thread::sleep(std::time::Duration::from_secs(2));
     let mut fence = Fence::new(pipeline.device(), FenceFlags::empty())?;
-    fence.bind_to(pool, queue, None)?;
+    fence.bind_to::<_, Pi>(pool, queue, None)?;
     fence.wait(None)?;
 
     return Ok(());

@@ -1,16 +1,16 @@
 use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, sync::{TryLockError, RwLockWriteGuard, RwLock, RwLockReadGuard}, marker::PhantomData, ops::{RangeBounds, Bound, Deref, Index}, slice::SliceIndex};
-use crate::{Result, Entry, physical_dev::Family, device::Device, utils::usize_to_u32, pipeline::Pipeline, descriptor::{DescriptorSet}};
+use crate::{Result, Entry, physical_dev::Family, device::{Device, DeviceRef}, utils::usize_to_u32, pipeline::Pipeline, descriptor::{DescriptorSet}};
 
 #[derive(Debug)]
-pub struct CommandPool<'a> {
+pub struct CommandPool<D: DeviceRef> {
     inner: NonZeroU64,
     pub(crate) locks: Box<[std::sync::RwLock<()>]>,
     pub(crate) buffers: Box<[vk::CommandBuffer]>,
-    parent: &'a Device
+    parent: D
 }
 
-impl<'a> CommandPool<'a> {
-    pub fn new (parent: &'a Device, family: Family, flags: CommandPoolFlags, capacity: u32, level: CommandBufferLevel) -> Result<Self> {
+impl<D: DeviceRef> CommandPool<D> {
+    pub fn new (parent: D, family: Family, flags: CommandPoolFlags, capacity: u32, level: CommandBufferLevel) -> Result<Self> {
         let info = vk::CommandPoolCreateInfo {
             sType: vk::STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
             pNext: core::ptr::null(),
@@ -24,7 +24,7 @@ impl<'a> CommandPool<'a> {
         }
 
         if let Some(inner) = NonZeroU64::new(result) {
-            let (locks, buffers) = match Self::create_buffers(inner, parent, capacity, level) {
+            let (locks, buffers) = match Self::create_buffers(inner, &parent, capacity, level) {
                 Ok(x) => x,
                 Err(e) => {
                     (Entry::get().destroy_command_pool)(parent.id(), inner.get(), core::ptr::null());
@@ -85,7 +85,7 @@ impl<'a> CommandPool<'a> {
     }
 
     #[inline]
-    pub fn begin (&self, idx: u32, flags: CommandBufferUsage) -> Result<Command<'_>> {
+    pub fn begin<P: DeviceRef> (&self, idx: u32, flags: CommandBufferUsage) -> Result<Command<'_, P>> {
         return match self.locks[idx as usize].write() {
             Ok(inner) => Command::new(self.buffers[idx as usize], CommandLock::Guard(inner), flags),
             Err(e) => Command::new(self.buffers[idx as usize], CommandLock::Guard(e.into_inner()), flags),
@@ -93,7 +93,7 @@ impl<'a> CommandPool<'a> {
     }
 
     #[inline]
-    pub fn begin_mut (&mut self, idx: u32, flags: CommandBufferUsage) -> Result<Command<'_>> {
+    pub fn begin_mut<P: DeviceRef> (&mut self, idx: u32, flags: CommandBufferUsage) -> Result<Command<'_, P>> {
         return match self.locks[idx as usize].get_mut() {
             Ok(inner) => Command::new(self.buffers[idx as usize], CommandLock::Ref(inner), flags),
             Err(e) => Command::new(self.buffers[idx as usize], CommandLock::Ref(e.into_inner()), flags),
@@ -101,7 +101,7 @@ impl<'a> CommandPool<'a> {
     }
     
     #[inline]
-    pub fn try_begin (&self, idx: u32, flags: CommandBufferUsage) -> Result<Option<Command<'_>>> {
+    pub fn try_begin<P: DeviceRef> (&self, idx: u32, flags: CommandBufferUsage) -> Result<Option<Command<'_, P>>> {
         return match self.locks[idx as usize].try_write() {
             Ok(inner) => Command::new(self.buffers[idx as usize], CommandLock::Guard(inner), flags).map(Some),
             Err(TryLockError::Poisoned(e)) => Command::new(self.buffers[idx as usize], CommandLock::Guard(e.into_inner()), flags).map(Some),
@@ -129,7 +129,7 @@ impl<'a> CommandPool<'a> {
     }
 }
 
-impl Drop for CommandPool<'_> {
+impl<D: DeviceRef> Drop for CommandPool<D> {
     #[inline]
     fn drop(&mut self) {
         (Entry::get().free_command_buffers)(
@@ -168,13 +168,13 @@ enum CommandLock<'a> {
 }
 
 #[derive(Debug)]
-pub struct Command<'a> {
+pub struct Command<'a, P: DeviceRef> {
     inner: vk::CommandBuffer,
     _lock: CommandLock<'a>,
-    _phtm: PhantomData<&'a mut Pipeline<'a>>
+    _phtm: PhantomData<&'a Pipeline<P>>
 }
 
-impl<'a> Command<'a> {
+impl<'a, P: DeviceRef> Command<'a, P> {
     fn new (inner: vk::CommandBuffer, lock: CommandLock<'a>, flags: CommandBufferUsage) -> Result<Self> {
         let this = Self { inner, _lock: lock, _phtm: PhantomData };
         let info = vk::CommandBufferBeginInfo {
@@ -197,7 +197,7 @@ impl<'a> Command<'a> {
     }
 
     #[inline]
-    pub fn bind_pipeline<R: RangeBounds<usize>> (&mut self, point: PipelineBindPoint, pipeline: &'a Pipeline<'_>, desc_sets: R) where [DescriptorSet]: Index<R, Output = [DescriptorSet]> {
+    pub fn bind_pipeline<R: RangeBounds<usize>> (&mut self, point: PipelineBindPoint, pipeline: &'a Pipeline<P>, desc_sets: R) where [DescriptorSet]: Index<R, Output = [DescriptorSet]> {
         (Entry::get().cmd_bind_pipeline)(
             self.id(),
             point as i32,
@@ -239,7 +239,7 @@ impl<'a> Command<'a> {
     }
 }
 
-impl Drop for Command<'_> {
+impl<P: DeviceRef> Drop for Command<'_, P> {
     #[inline]
     fn drop(&mut self) {
         let v = (Entry::get().end_command_buffer)(self.id());

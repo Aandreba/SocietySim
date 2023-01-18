@@ -1,4 +1,4 @@
-use crate::{device::Device, Entry, Result, utils::u64_to_usize};
+use crate::{device::{Device, DeviceRef}, Entry, Result, utils::u64_to_usize};
 use std::{
     fmt::Debug,
     marker::PhantomData,
@@ -6,7 +6,7 @@ use std::{
     num::NonZeroU64,
     ops::{Range, RangeBounds, Bound},
     ptr::{addr_of, addr_of_mut, NonNull},
-    sync::{Mutex, MutexGuard, TryLockError, Arc, atomic::{AtomicPtr, Ordering}}, rc::Rc, ffi::c_void, collections::{HashMap},
+    sync::{Mutex, MutexGuard, TryLockError, Arc, atomic::{AtomicPtr, Ordering}}, rc::Rc, ffi::c_void,
 };
 use vk::MemoryType;
 
@@ -209,14 +209,14 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Arc<T> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct RawInner<'a>(pub &'a Device);
+struct RawInner<D> (pub D);
 
-unsafe impl DeviceAllocator for RawInner<'_> {
+unsafe impl<D: DeviceRef> DeviceAllocator for RawInner<D> {
     type Metadata = RawInfo;
 
     #[inline]
     fn device(&self) -> &Device {
-        return self.0;
+        return self.0.deref();
     }
 
     fn allocate<'a>(
@@ -321,17 +321,17 @@ unsafe impl DeviceAllocator for RawInner<'_> {
 }
 
 #[derive(Debug)]
-pub struct Page<'a> {
+pub struct Page<D: DeviceRef> {
     inner: ManuallyDrop<MemoryPtr<RawInfo>>,
     flags: MemoryFlags,
     ranges: Mutex<Vec<Range<vk::DeviceSize>>>,
     mapped_ptr: AtomicPtr<c_void>,
-    alloc: RawInner<'a>,
+    alloc: RawInner<D>,
 }
 
-impl<'a> Page<'a> {
+impl<D: DeviceRef> Page<D> {
     #[inline]
-    pub fn new(device: &'a Device, size: vk::DeviceSize, flags: MemoryFlags) -> Result<Self> {
+    pub fn new(device: D, size: vk::DeviceSize, flags: MemoryFlags) -> Result<Self> {
         let raw = RawInner(device);
         let inner = raw.allocate(size, 1, flags)?;
         return Ok(Self {
@@ -416,7 +416,7 @@ impl<'a> Page<'a> {
     }
 }
 
-unsafe impl DeviceAllocator for Page<'_> {
+unsafe impl<D: DeviceRef> DeviceAllocator for Page<D> {
     type Metadata = PageInfo;
 
     #[inline]
@@ -533,7 +533,7 @@ unsafe impl DeviceAllocator for Page<'_> {
     }
 }
 
-impl Drop for Page<'_> {
+impl<D: DeviceRef> Drop for Page<D> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
@@ -545,9 +545,6 @@ impl Drop for Page<'_> {
         }
     }
 }
-
-unsafe impl Send for Page<'_> {}
-unsafe impl Sync for Page<'_> {}
 
 /// Metadata for [`Raw`]-allocated memory
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

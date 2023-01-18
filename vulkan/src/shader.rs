@@ -1,22 +1,16 @@
-use std::{ptr::{addr_of, addr_of_mut}, num::NonZeroU64, ffi::CStr, marker::PhantomData};
-use crate::{Result, Entry, device::Device, utils::usize_to_u32, descriptor::DescriptorType};
+use std::{ptr::{addr_of, addr_of_mut}, num::NonZeroU64, ffi::CStr};
+use crate::{Result, Entry, device::{Device, DeviceRef}, utils::usize_to_u32, descriptor::DescriptorType};
 
 const DEFAULT_ENTRY: &CStr = unsafe { cstr!("main") };
 
 //#[derive(PartialEq, Eq, Hash)]
-pub struct Shader<'a> {
+pub struct Shader<D: DeviceRef> {
     module: NonZeroU64,
     layout: NonZeroU64,
-    device: &'a Device,
-    _phtm: PhantomData<&'a CStr>
+    device: D,
 }
 
-impl<'a> Shader<'a> {
-    #[inline]
-    pub fn builder (device: &'a Device, stage: ShaderStage) -> Builder<'a> {
-        return Builder::new(device, stage);
-    }
-
+impl<D: DeviceRef> Shader<D> {
     #[inline]
     pub fn module (&self) -> u64 {
         return self.module.get()
@@ -29,11 +23,11 @@ impl<'a> Shader<'a> {
 
     #[inline]
     pub fn device (&self) -> &Device {
-        return self.device
+        return self.device.deref()
     }
 }
 
-impl Drop for Shader<'_> {
+impl<D: DeviceRef> Drop for Shader<D> {
     #[inline]
     fn drop(&mut self) {
         let entry = Entry::get();
@@ -42,17 +36,17 @@ impl Drop for Shader<'_> {
     }
 }
 
-pub struct Builder<'a> {
+pub struct Builder<'a, D> {
     pub(crate) bindings: Vec<vk::DescriptorSetLayoutBinding>,
     pub(crate) flags: LayoutCreateFlags,
     pub(crate) stage: ShaderStage,
-    pub(crate) device: &'a Device,
+    pub(crate) device: D,
     pub(crate) entry: &'a CStr
 }
 
-impl<'a> Builder<'a> {
+impl<'a, D: DeviceRef> Builder<'a, D> {
     #[inline]
-    pub fn new (device: &'a Device, stage: ShaderStage) -> Self {
+    pub fn new (device: D, stage: ShaderStage) -> Self {
         return Self {
             bindings: Vec::new(),
             flags: LayoutCreateFlags::empty(),
@@ -87,7 +81,7 @@ impl<'a> Builder<'a> {
         self
     }
 
-    pub fn build (mut self, words: &[u32]) -> Result<Shader<'a>> {
+    pub fn build (mut self, words: &[u32]) -> Result<Shader<D>> {
         let entry = Entry::get();
         let info = vk::DescriptorSetLayoutCreateInfo {
             sType: vk::STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -103,7 +97,7 @@ impl<'a> Builder<'a> {
         }
 
         if let Some(layout) = NonZeroU64::new(layout) {
-            let module = match self.build_module(entry, self.device, words) {
+            let module = match self.build_module(entry, words) {
                 Ok(x) => x,
                 Err(e) => {
                     (Entry::get().destroy_descriptor_set_layout)(self.device.id(), layout.get(), core::ptr::null());
@@ -114,15 +108,14 @@ impl<'a> Builder<'a> {
             return Ok(Shader {
                 module,
                 layout,
-                device: self.device,
-                _phtm: PhantomData
+                device: self.device
             })
         }
 
         return Err(vk::ERROR_UNKNOWN.into())
     }
 
-    fn build_module (&mut self, entry: &Entry, device: &'a Device, words: &[u32]) -> Result<NonZeroU64> {
+    fn build_module (&mut self, entry: &Entry, words: &[u32]) -> Result<NonZeroU64> {
         let module_info = vk::ShaderModuleCreateInfo {
             sType: vk::STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
             pNext: core::ptr::null_mut(),
@@ -133,7 +126,7 @@ impl<'a> Builder<'a> {
 
         let mut module = 0;
         tri! {
-            (entry.create_shader_module)(device.id(), addr_of!(module_info), core::ptr::null(), addr_of_mut!(module))
+            (entry.create_shader_module)(self.device.id(), addr_of!(module_info), core::ptr::null(), addr_of_mut!(module))
         };
 
         return NonZeroU64::new(module).ok_or(vk::ERROR_INITIALIZATION_FAILED.into());

@@ -1,22 +1,22 @@
 use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ffi::CStr};
-use crate::{shader::{LayoutCreateFlags, ShaderStage, Shader}, Entry, Result, device::Device, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSets}};
+use crate::{shader::{LayoutCreateFlags, ShaderStage, Shader}, Entry, Result, device::{Device, DeviceRef}, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSets}};
 
 const DEFAULT_ENTRY: &CStr = unsafe { cstr!("main") };
 
-pub struct ComputeBuilder<'a> {
+pub struct ComputeBuilder<'a, D> {
     pipe_flags: PipelineFlags,
     pipe_layout_flags: PipelineLayoutFlags,
     cache_flags: Option<PipelineCacheFlags>,
     layout_flags: LayoutCreateFlags,
     bindings: Vec<vk::DescriptorSetLayoutBinding>,
     pool_sizes: Vec<vk::DescriptorPoolSize>,
-    device: &'a Device,
+    device: D,
     entry: &'a CStr
 }
 
-impl<'a> ComputeBuilder<'a> {
+impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
     #[inline]
-    pub fn new (device: &'a Device) -> Self {
+    pub fn new (device: D) -> Self {
         return Self {
             pipe_flags: PipelineFlags::empty(),
             pipe_layout_flags: PipelineLayoutFlags::empty(),
@@ -79,7 +79,7 @@ impl<'a> ComputeBuilder<'a> {
         self
     }
 
-    pub fn build (mut self, words: &[u32]) -> Result<Pipeline<'a>> {
+    pub fn build (mut self, words: &[u32]) -> Result<Pipeline<D>> {
         let entry = Entry::get();
         let shader = self.build_shader(words)?;
 
@@ -98,7 +98,7 @@ impl<'a> ComputeBuilder<'a> {
                 (entry.create_pipeline_cache)(self.device.id(), addr_of!(cache_info), core::ptr::null(), addr_of_mut!(my_cache))
             }
             if let Some(my_cache) = NonZeroU64::new(my_cache) {
-                cache = Some(PipelineCache { inner: my_cache, device: self.device });
+                cache = Some(PipelineCache { inner: my_cache, device: self.device.clone() });
             } else {
                 return Err(vk::ERROR_UNKNOWN.into())
             }
@@ -174,24 +174,24 @@ impl<'a> ComputeBuilder<'a> {
         return Err(vk::ERROR_UNKNOWN.into())
     }
 
-    fn build_shader (&mut self, words: &[u32]) -> Result<Shader<'a>> {
+    fn build_shader (&mut self, words: &[u32]) -> Result<Shader<D>> {
         let builder = crate::shader::Builder {
             bindings: core::mem::take(&mut self.bindings),
             flags: self.layout_flags,
             stage: ShaderStage::COMPUTE,
-            device: self.device,
+            device: self.device.clone(),
             entry: self.entry,
         };
 
         return builder.build(words);
     }
 
-    fn build_descriptor_pool (&mut self) -> Result<DescriptorPool<'a>> {
+    fn build_descriptor_pool (&mut self) -> Result<DescriptorPool<D>> {
         let builder = crate::descriptor::Builder {
             flags: DescriptorPoolFlags::empty(),
             capacity: 1,
             pool_sizes: core::mem::take(&mut self.pool_sizes),
-            device: self.device,
+            device: self.device.clone(),
         };
 
         return builder.build()
@@ -199,13 +199,13 @@ impl<'a> ComputeBuilder<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct Pipeline<'a> {
+pub struct Pipeline<D: DeviceRef> {
     inner: NonZeroU64,
     layout: NonZeroU64,
-    sets: DescriptorSets<'a>
+    sets: DescriptorSets<D>
 }
 
-impl<'a> Pipeline<'a> {
+impl<D: DeviceRef> Pipeline<D> {
     #[inline]
     pub fn id (&self) -> u64 {
         return self.inner.get()
@@ -222,17 +222,17 @@ impl<'a> Pipeline<'a> {
     }
 
     #[inline]
-    pub fn sets (&self) -> &DescriptorSets<'a> {
+    pub fn sets (&self) -> &DescriptorSets<D> {
         return &self.sets
     }
 
     #[inline]
-    pub fn sets_mut (&mut self) -> &mut DescriptorSets<'a> {
+    pub fn sets_mut (&mut self) -> &mut DescriptorSets<D> {
         return &mut self.sets
     }
 
     #[inline]
-    pub fn pool (&self) -> &DescriptorPool<'a> {
+    pub fn pool (&self) -> &DescriptorPool<D> {
         return self.sets.pool()
     }
 
@@ -242,7 +242,7 @@ impl<'a> Pipeline<'a> {
     }*/
 }
 
-impl Drop for Pipeline<'_> {
+impl<D: DeviceRef> Drop for Pipeline<D> {
     #[inline]
     fn drop(&mut self) {
         (Entry::get().destroy_pipeline_layout)(self.device().id(), self.layout(), core::ptr::null());
@@ -311,19 +311,19 @@ bitflags::bitflags! {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-struct PipelineCache<'a> {
+struct PipelineCache<D: DeviceRef> {
     inner: NonZeroU64,
-    device: &'a Device
+    device: D
 }
 
-impl PipelineCache<'_> {
+impl<D: DeviceRef> PipelineCache<D> {
     #[inline]
     pub fn id (&self) -> u64 {
         return self.inner.get()
     }
 }
 
-impl Drop for PipelineCache<'_> {
+impl<D: DeviceRef> Drop for PipelineCache<D> {
     #[inline]
     fn drop(&mut self) {
         (Entry::get().destroy_pipeline_cache)(self.device.id(), self.id(), core::ptr::null())

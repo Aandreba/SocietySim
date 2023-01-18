@@ -1,5 +1,7 @@
-use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}, hash::Hash, ffi::CStr};
+use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}, hash::Hash, ffi::CStr, ops::Deref};
 use crate::{Result, Entry, queue::{Queue}, physical_dev::{PhysicalDevice, Family}, utils::usize_to_u32};
+
+pub trait DeviceRef = Deref<Target = Device>;
 
 #[derive(Debug)]
 pub struct Device {
