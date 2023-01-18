@@ -65,8 +65,8 @@ fn main() -> anyhow::Result<()> {
     )?;
 
     let mut people_map = people.map_mut(..)?;
-    for (i, person) in people_map.iter_mut().enumerate() {
-        let _ = person.write(Person::new(true, i as u16, 10, 10, 10, 10, 10, 10));
+    for (_, person) in people_map.iter_mut().enumerate() {
+        let _ = person.write(Person::default());
     }
     drop(people_map);
     let mut people = unsafe { people.assume_init() };

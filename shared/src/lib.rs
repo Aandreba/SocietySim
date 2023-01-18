@@ -1,4 +1,5 @@
 #![cfg_attr(target_arch = "spirv", no_std)]
+#![feature(portable_simd)]
 
 pub mod time;
 pub mod person;

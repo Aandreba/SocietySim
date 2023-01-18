@@ -52,7 +52,7 @@ pub type Result<T> = ::core::result::Result<T, error::Error>;
 pub use proc::{include_spv};
 use vk::get_version;
 
-use std::{marker::{PhantomData}, ffi::{CStr, OsStr, c_char}, ptr::{addr_of, addr_of_mut}, mem::transmute, num::NonZeroU64, fmt::Debug};
+use std::{marker::{PhantomData}, ffi::{CStr, OsStr, c_char}, ptr::{addr_of, addr_of_mut}, mem::transmute, num::NonZeroU64, fmt::Debug, hash::Hash};
 use libloading::{Library};
 use utils::usize_to_u32;
 use vulkan_bindings::make_version;
@@ -278,6 +278,21 @@ impl Drop for Builder<'_> {
 #[repr(transparent)]
 pub struct ExtensionProperty {
     inner: vk::ExtensionProperties
+}
+
+impl PartialEq for ExtensionProperty {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.name() == other.name() && self.inner.specVersion == other.inner.specVersion
+    }
+}
+
+impl Hash for ExtensionProperty {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name().hash(state);
+        self.inner.specVersion.hash(state);
+    }
 }
 
 impl Debug for ExtensionProperty {
