@@ -1,8 +1,4 @@
-use core::simd::f32x8;
-
-use glam::{Vec3A, Vec3, Vec4};
-
-use crate::{time::GameDuration, person::{Person, PersonStats}};
+use crate::{time::GameDuration, person::{Person, PersonStats}, simd::f32x4};
 
 #[cfg_attr(not(target_arch = "spirv"), derive(Debug, serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, PartialEq)]
@@ -17,6 +13,9 @@ impl PersonalEvent {
     #[inline]
     pub fn calculate_chance (self, person: Person) -> f32 {
         const WEIGHT: f32 = u8::MAX as f32;
+
+        //let chance_hi = f32x4::from_array([self.chance.cordiality, self.chance.finesse, self.chance.gullability, self.chance.health]);
+        
 
         let chance = self.chance.cordiality * person.stats.cordiality as f32
         + self.chance.finesse * person.stats.finesse as f32

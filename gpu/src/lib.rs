@@ -10,12 +10,12 @@ const CUSTOM_EVENT: PersonalEvent = PersonalEvent {
     base_chance: 0.75f32,
 
     chance: PersonStats {
-        cordiality: 2f32,
-        intelligence: 1f32,
-        knowledge: 1f32,
-        finesse: 1f32,
-        gullability: 1f32,
-        health: 1f32,
+        cordiality: 1f32,
+        intelligence: 0f32,
+        knowledge: 0f32,
+        finesse: 0f32,
+        gullability: 0f32,
+        health: 0f32,
     },
 
     effects: PersonStats {
@@ -35,9 +35,10 @@ pub fn main_cs(
 ) {
     let person = &mut people[id.x as usize];
     let chance = CUSTOM_EVENT.calculate_chance(*person);
-    if 0.5f32 < chance {
+    if 0.01f32 < chance {
         person.stats.health = person.stats.health + (CUSTOM_EVENT.effects.health as u8);
     } else {
-        person.stats.health = chance as u8;
+        person.stats.health = (chance * 100f32) as u8;
+        person.age = id.x as u16;
     }
 }

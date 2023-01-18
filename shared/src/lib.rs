@@ -4,6 +4,7 @@
 pub mod time;
 pub mod person;
 pub mod person_event;
+pub mod simd;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]
