@@ -1,4 +1,4 @@
-use shared::simd::{f32x2, f64x2, f32x3, f64x3};
+use shared::simd::{f32x2, f32x3};
 use crate::math::*;
 
 pub trait Random2 {
@@ -14,6 +14,7 @@ impl Random2 for f32 {
     }
 }
 
+#[cfg(target_feature = "Float64")]
 impl Random2 for f64 {
     #[inline]
     fn generate(self, y: Self) -> Self {
@@ -36,6 +37,7 @@ impl Random3 for f32 {
     }
 }
 
+#[cfg(target_feature = "Float64")]
 impl Random3 for f64 {
     #[inline]
     fn generate(self, y: Self, z: Self) -> Self {

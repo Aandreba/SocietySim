@@ -6,13 +6,11 @@ use vulkan::{
     device::DeviceRef,
     pipeline::{ComputeBuilder, Pipeline},
     pool::{CommandPool, CommandBufferUsage, PipelineBindPoint},
-    Result, descriptor::{DescriptorSet, DescriptorType}, utils::u64_to_u32, queue::{Queue, FenceFlags, Fence}, shader::ShaderStages,
+    Result, descriptor::{DescriptorSet, DescriptorType}, utils::u64_to_u32, queue::{Queue, FenceFlags, Fence}, shader::ShaderStages, cstr,
 };
-use crate::cstr;
 
 pub struct PersonalEvents<D: DeviceRef> {
     pipeline: Pipeline<D>,
-    rng: ThreadRng,
     seed: f32,
 }
 
@@ -26,11 +24,9 @@ impl<D: DeviceRef> PersonalEvents<D> {
             .binding(DescriptorType::StorageBuffer, 1)
             .build(words)?;
 
-        let mut rng = thread_rng();
         return Ok(Self {
             pipeline,
-            seed: 100f32 * rng.sample::<f32, _>(OpenClosed01),
-            rng,
+            seed: 100f32 * thread_rng().sample::<f32, _>(OpenClosed01),
         });
     }
 
@@ -66,7 +62,7 @@ impl<D: DeviceRef> PersonalEvents<D> {
         fence.bind_to::<_, Pool>(pool, queue, None)?;
         fence.wait(None)?;
 
-        self.seed = 100f32 * self.rng.sample::<f32, _>(OpenClosed01);
+        self.seed = 100f32 * thread_rng().sample::<f32, _>(OpenClosed01);
         return unsafe { Ok(result.assume_init()) };
     }
 }

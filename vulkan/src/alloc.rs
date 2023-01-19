@@ -1,12 +1,24 @@
-use crate::{device::{Device, DeviceRef}, Entry, Result, utils::u64_to_usize};
+use crate::{
+    device::{Device, DeviceRef},
+    error::Error,
+    utils::u64_to_usize,
+    Entry, Result,
+};
 use std::{
+    collections::HashMap,
+    ffi::c_void,
     fmt::Debug,
     marker::PhantomData,
     mem::{ManuallyDrop, MaybeUninit},
-    num::NonZeroU64,
-    ops::{Range, RangeBounds, Bound},
+    num::{NonZeroU64, NonZeroUsize},
+    ops::{Bound, Deref, Range, RangeBounds},
+    pin::Pin,
     ptr::{addr_of, addr_of_mut, NonNull},
-    sync::{Mutex, MutexGuard, TryLockError, Arc, atomic::{AtomicPtr, Ordering}}, rc::Rc, ffi::c_void,
+    rc::Rc,
+    sync::{
+        atomic::{AtomicPtr, Ordering},
+        Arc, Mutex, MutexGuard, TryLockError,
+    },
 };
 use vk::MemoryType;
 
@@ -55,24 +67,30 @@ pub unsafe trait DeviceAllocator {
     type Device: DeviceRef;
     type Metadata: MemoryMetadata;
 
-    fn owned_device (&self) -> Self::Device where Self::Device: Clone;
+    fn owned_device(&self) -> Self::Device
+    where
+        Self::Device: Clone;
     fn device(&self) -> &Device;
-    
+
     fn allocate(
         &self,
         size: vk::DeviceSize,
         align: vk::DeviceSize,
         flags: MemoryFlags,
     ) -> Result<MemoryPtr<Self::Metadata>>;
-    
+
     unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>);
 
     /// # Safety
     /// It is up to the caller to ensure that Rust's [borrowing rules](https://doc.rust-lang.org/stable/book/ch04-02-references-and-borrowing.html) are followed for the maps.
-    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>>;
+    unsafe fn map(
+        &self,
+        mem: &MemoryPtr<Self::Metadata>,
+        bounds: impl RangeBounds<usize>,
+    ) -> Result<NonNull<[u8]>>;
     /// # Safety
     /// It is up to the caller to ensure that Rust's [borrowing rules](https://doc.rust-lang.org/stable/book/ch04-02-references-and-borrowing.html) are followed for the maps.
-    unsafe fn unmap (&self, mem: &MemoryPtr<Self::Metadata>);
+    unsafe fn unmap(&self, mem: &MemoryPtr<Self::Metadata>);
 }
 
 unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for &T {
@@ -80,13 +98,16 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for &T {
     type Metadata = T::Metadata;
 
     #[inline]
-    fn owned_device (&self) -> Self::Device where Self::Device: Clone {
-        return T::owned_device(*self)
+    fn owned_device(&self) -> Self::Device
+    where
+        Self::Device: Clone,
+    {
+        return T::owned_device(*self);
     }
 
     #[inline]
     fn device(&self) -> &Device {
-        return T::device(*self)
+        return T::device(*self);
     }
 
     #[inline]
@@ -96,21 +117,25 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for &T {
         align: vk::DeviceSize,
         flags: MemoryFlags,
     ) -> Result<MemoryPtr<Self::Metadata>> {
-        return T::allocate(*self, size, align, flags)
+        return T::allocate(*self, size, align, flags);
     }
 
     #[inline]
     unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
-        return T::free(*self, ptr)
+        return T::free(*self, ptr);
     }
 
     #[inline]
-    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>> {
+    unsafe fn map(
+        &self,
+        mem: &MemoryPtr<Self::Metadata>,
+        bounds: impl RangeBounds<usize>,
+    ) -> Result<NonNull<[u8]>> {
         T::map(*self, mem, bounds)
     }
 
     #[inline]
-    unsafe fn unmap (&self, mem: &MemoryPtr<Self::Metadata>) {
+    unsafe fn unmap(&self, mem: &MemoryPtr<Self::Metadata>) {
         T::unmap(*self, mem)
     }
 }
@@ -120,13 +145,16 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Box<T> {
     type Metadata = T::Metadata;
 
     #[inline]
-    fn owned_device (&self) -> Self::Device where Self::Device: Clone {
-        return T::owned_device(self)
+    fn owned_device(&self) -> Self::Device
+    where
+        Self::Device: Clone,
+    {
+        return T::owned_device(self);
     }
 
     #[inline]
     fn device(&self) -> &Device {
-        return T::device(self)
+        return T::device(self);
     }
 
     #[inline]
@@ -136,21 +164,25 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Box<T> {
         align: vk::DeviceSize,
         flags: MemoryFlags,
     ) -> Result<MemoryPtr<Self::Metadata>> {
-        return T::allocate(self, size, align, flags)
+        return T::allocate(self, size, align, flags);
     }
 
     #[inline]
     unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
-        return T::free(self, ptr)
+        return T::free(self, ptr);
     }
 
     #[inline]
-    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>> {
+    unsafe fn map(
+        &self,
+        mem: &MemoryPtr<Self::Metadata>,
+        bounds: impl RangeBounds<usize>,
+    ) -> Result<NonNull<[u8]>> {
         T::map(self, mem, bounds)
     }
 
     #[inline]
-    unsafe fn unmap (&self, mem: &MemoryPtr<Self::Metadata>) {
+    unsafe fn unmap(&self, mem: &MemoryPtr<Self::Metadata>) {
         T::unmap(self, mem)
     }
 }
@@ -160,13 +192,16 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Rc<T> {
     type Metadata = T::Metadata;
 
     #[inline]
-    fn owned_device (&self) -> Self::Device where Self::Device: Clone {
-        return T::owned_device(self)
+    fn owned_device(&self) -> Self::Device
+    where
+        Self::Device: Clone,
+    {
+        return T::owned_device(self);
     }
 
     #[inline]
     fn device(&self) -> &Device {
-        return T::device(self)
+        return T::device(self);
     }
 
     #[inline]
@@ -176,21 +211,25 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Rc<T> {
         align: vk::DeviceSize,
         flags: MemoryFlags,
     ) -> Result<MemoryPtr<Self::Metadata>> {
-        return T::allocate(self, size, align, flags)
+        return T::allocate(self, size, align, flags);
     }
 
     #[inline]
     unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
-        return T::free(self, ptr)
+        return T::free(self, ptr);
     }
 
     #[inline]
-    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>> {
+    unsafe fn map(
+        &self,
+        mem: &MemoryPtr<Self::Metadata>,
+        bounds: impl RangeBounds<usize>,
+    ) -> Result<NonNull<[u8]>> {
         T::map(self, mem, bounds)
     }
 
     #[inline]
-    unsafe fn unmap (&self, mem: &MemoryPtr<Self::Metadata>) {
+    unsafe fn unmap(&self, mem: &MemoryPtr<Self::Metadata>) {
         T::unmap(self, mem)
     }
 }
@@ -200,13 +239,16 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Arc<T> {
     type Metadata = T::Metadata;
 
     #[inline]
-    fn owned_device (&self) -> Self::Device where Self::Device: Clone {
-        return T::owned_device(self)
+    fn owned_device(&self) -> Self::Device
+    where
+        Self::Device: Clone,
+    {
+        return T::owned_device(self);
     }
 
     #[inline]
     fn device(&self) -> &Device {
-        return T::device(self)
+        return T::device(self);
     }
 
     #[inline]
@@ -216,35 +258,92 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Arc<T> {
         align: vk::DeviceSize,
         flags: MemoryFlags,
     ) -> Result<MemoryPtr<Self::Metadata>> {
-        return T::allocate(self, size, align, flags)
+        return T::allocate(self, size, align, flags);
     }
 
     #[inline]
     unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
-        return T::free(self, ptr)
+        return T::free(self, ptr);
     }
 
     #[inline]
-    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>> {
+    unsafe fn map(
+        &self,
+        mem: &MemoryPtr<Self::Metadata>,
+        bounds: impl RangeBounds<usize>,
+    ) -> Result<NonNull<[u8]>> {
         T::map(self, mem, bounds)
     }
 
     #[inline]
-    unsafe fn unmap (&self, mem: &MemoryPtr<Self::Metadata>) {
+    unsafe fn unmap(&self, mem: &MemoryPtr<Self::Metadata>) {
+        T::unmap(self, mem)
+    }
+}
+
+unsafe impl<T: Deref> DeviceAllocator for Pin<T>
+where
+    T::Target: DeviceAllocator,
+{
+    type Device = <T::Target as DeviceAllocator>::Device;
+    type Metadata = <T::Target as DeviceAllocator>::Device;
+
+    #[inline]
+    fn owned_device(&self) -> Self::Device
+    where
+        Self::Device: Clone,
+    {
+        return T::owned_device(self);
+    }
+
+    #[inline]
+    fn device(&self) -> &Device {
+        return T::device(self);
+    }
+
+    #[inline]
+    fn allocate(
+        &self,
+        size: vk::DeviceSize,
+        align: vk::DeviceSize,
+        flags: MemoryFlags,
+    ) -> Result<MemoryPtr<Self::Metadata>> {
+        return T::allocate(self, size, align, flags);
+    }
+
+    #[inline]
+    unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
+        return T::free(self, ptr);
+    }
+
+    #[inline]
+    unsafe fn map(
+        &self,
+        mem: &MemoryPtr<Self::Metadata>,
+        bounds: impl RangeBounds<usize>,
+    ) -> Result<NonNull<[u8]>> {
+        T::map(self, mem, bounds)
+    }
+
+    #[inline]
+    unsafe fn unmap(&self, mem: &MemoryPtr<Self::Metadata>) {
         T::unmap(self, mem)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct RawInner<D> (pub D);
+struct RawInner<D>(pub D);
 
 unsafe impl<D: DeviceRef> DeviceAllocator for RawInner<D> {
     type Device = D;
     type Metadata = RawInfo;
 
     #[inline]
-    fn owned_device (&self) -> Self::Device where Self::Device: Clone {
-        return self.0.clone()
+    fn owned_device(&self) -> Self::Device
+    where
+        Self::Device: Clone,
+    {
+        return self.0.clone();
     }
 
     #[inline]
@@ -312,13 +411,17 @@ unsafe impl<D: DeviceRef> DeviceAllocator for RawInner<D> {
         (Entry::get().free_memory)(self.device().id(), ptr.id(), core::ptr::null())
     }
 
-    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>> {
+    unsafe fn map(
+        &self,
+        mem: &MemoryPtr<Self::Metadata>,
+        bounds: impl RangeBounds<usize>,
+    ) -> Result<NonNull<[u8]>> {
         let entry = Entry::get();
 
         let start = match bounds.start_bound() {
             Bound::Excluded(x) => *x + 1,
             Bound::Included(x) => *x,
-            Bound::Unbounded => 0
+            Bound::Unbounded => 0,
         };
 
         let end = match bounds.end_bound() {
@@ -327,28 +430,34 @@ unsafe impl<D: DeviceRef> DeviceAllocator for RawInner<D> {
             #[cfg(debug_assertions)]
             Bound::Unbounded => usize::try_from(mem._meta.size).unwrap(),
             #[cfg(not(debug_assertions))]
-            Bound::Unbounded => mem._meta.size as usize
+            Bound::Unbounded => mem._meta.size as usize,
         };
-        
+
         let len = end - start;
         let mut ptr: *mut c_void = core::ptr::null_mut();
-        (entry.map_memory)(self.device().id(), mem.id(), start as u64, len as u64, 0, addr_of_mut!(ptr));
-        
+        (entry.map_memory)(
+            self.device().id(),
+            mem.id(),
+            start as u64,
+            len as u64,
+            0,
+            addr_of_mut!(ptr),
+        );
+
         if let Some(ptr) = NonNull::new(ptr) {
             let ptr = ptr.as_ptr().byte_add(start);
             debug_assert!(!ptr.is_null());
 
-            return Ok(NonNull::new_unchecked(core::ptr::from_raw_parts_mut::<[u8]>(
-                ptr.cast(),
-                len
-            )))
+            return Ok(NonNull::new_unchecked(
+                core::ptr::from_raw_parts_mut::<[u8]>(ptr.cast(), len),
+            ));
         }
 
-        return Err(vk::ERROR_MEMORY_MAP_FAILED.into())
+        return Err(vk::ERROR_MEMORY_MAP_FAILED.into());
     }
 
     #[inline]
-    unsafe fn unmap (&self, mem: &MemoryPtr<Self::Metadata>) {
+    unsafe fn unmap(&self, mem: &MemoryPtr<Self::Metadata>) {
         (Entry::get().unmap_memory)(self.device().id(), mem.id())
     }
 }
@@ -377,7 +486,12 @@ impl<D: DeviceRef> Page<D> {
     }
 
     #[inline]
-    fn try_allocate(
+    pub fn flags(&self) -> MemoryFlags {
+        return self.flags;
+    }
+
+    #[inline]
+    pub(super) fn try_allocate(
         &self,
         size: vk::DeviceSize,
         align: vk::DeviceSize,
@@ -412,7 +526,7 @@ impl<D: DeviceRef> Page<D> {
 
         if let Some((i, padding)) = result {
             let mut range = unsafe { ranges.get_unchecked_mut(i) };
-            
+
             if padding == 0 {
                 let start = range.start;
                 let end = range.start + size;
@@ -421,9 +535,7 @@ impl<D: DeviceRef> Page<D> {
                 return unsafe {
                     Ok(MemoryPtr::new(
                         self.inner.inner,
-                        PageInfo {
-                            range: start..end,
-                        },
+                        PageInfo { range: start..end },
                     ))
                 };
             } else {
@@ -436,13 +548,10 @@ impl<D: DeviceRef> Page<D> {
                 return unsafe {
                     Ok(MemoryPtr::new(
                         self.inner.inner,
-                        PageInfo {
-                            range: start..end,
-                        },
+                        PageInfo { range: start..end },
                     ))
                 };
             }
-
         } else {
             return Err(vk::ERROR_OUT_OF_DEVICE_MEMORY.into());
         }
@@ -454,8 +563,11 @@ unsafe impl<D: DeviceRef> DeviceAllocator for Page<D> {
     type Metadata = PageInfo;
 
     #[inline]
-    fn owned_device (&self) -> Self::Device where Self::Device: Clone {
-        return self.alloc.owned_device()
+    fn owned_device(&self) -> Self::Device
+    where
+        Self::Device: Clone,
+    {
+        return self.alloc.owned_device();
     }
 
     #[inline]
@@ -485,20 +597,20 @@ unsafe impl<D: DeviceRef> DeviceAllocator for Page<D> {
             Ok(x) => x,
             Err(e) => e.into_inner(),
         };
-        
+
         let mut ptr_range = ptr._meta.range;
         let mut i = 0;
 
         while i < ranges.len() {
             let range = unsafe { ranges.get_unchecked_mut(i) };
-            
+
             if range.start == ptr_range.end {
                 range.start = ptr_range.start;
                 ptr_range = ranges.swap_remove(i);
                 i = 0;
                 continue;
             }
-            
+
             if range.end == ptr_range.start {
                 range.end = ptr_range.end;
                 ptr_range = ranges.swap_remove(i);
@@ -512,38 +624,48 @@ unsafe impl<D: DeviceRef> DeviceAllocator for Page<D> {
         ranges.push(ptr_range)
     }
 
-    unsafe fn map (&self, mem: &MemoryPtr<Self::Metadata>, bounds: impl RangeBounds<usize>) -> Result<NonNull<[u8]>> {        
+    unsafe fn map(
+        &self,
+        mem: &MemoryPtr<Self::Metadata>,
+        bounds: impl RangeBounds<usize>,
+    ) -> Result<NonNull<[u8]>> {
         // Obtained general mapped pointer
         let ptr = loop {
-            match self.mapped_ptr.compare_exchange(UNINIT, INITIALIZING, Ordering::AcqRel, Ordering::Acquire) {
+            match self.mapped_ptr.compare_exchange(
+                UNINIT,
+                INITIALIZING,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
                 // Map the full region
                 Ok(_) => {
                     let ptr = match self.alloc.map(&self.inner, ..) {
                         Ok(x) => x.cast::<c_void>(),
                         Err(e) => {
                             self.mapped_ptr.store(UNINIT, Ordering::Release);
-                            return Err(e)
+                            return Err(e);
                         }
                     };
-                    
+
                     self.mapped_ptr.store(ptr.as_ptr(), Ordering::Release);
-                    break ptr
-                },
+                    break ptr;
+                }
 
                 // Wait until mapping is done
                 Err(INITIALIZING) => core::hint::spin_loop(),
                 // Get initialized mapping
-                Err(other) => break unsafe { NonNull::new_unchecked(other) }
+                Err(other) => break unsafe { NonNull::new_unchecked(other) },
             }
         };
 
         // Calculate start & end points
         let offset = u64_to_usize(mem._meta.range.start);
-        let start = offset + match bounds.start_bound() {
-            Bound::Excluded(x) => *x + 1,
-            Bound::Included(x) => *x,
-            Bound::Unbounded => 0
-        };
+        let start = offset
+            + match bounds.start_bound() {
+                Bound::Excluded(x) => *x + 1,
+                Bound::Included(x) => *x,
+                Bound::Unbounded => 0,
+            };
         let end = match bounds.end_bound() {
             Bound::Excluded(x) => offset + *x,
             Bound::Included(x) => offset + *x + 1,
@@ -554,7 +676,7 @@ unsafe impl<D: DeviceRef> DeviceAllocator for Page<D> {
         if (start as u64) > mem._meta.range.end || (end as u64) > mem._meta.range.end {
             #[cfg(debug_assertions)]
             eprintln!("Bounds overflow");
-            return Err(vk::ERROR_MEMORY_MAP_FAILED.into())
+            return Err(vk::ERROR_MEMORY_MAP_FAILED.into());
         }
 
         let ptr = ptr.as_ptr().byte_add(start);
@@ -562,12 +684,12 @@ unsafe impl<D: DeviceRef> DeviceAllocator for Page<D> {
 
         return Ok(NonNull::new_unchecked(core::ptr::from_raw_parts_mut(
             ptr.cast(),
-            end - start
+            end - start,
         )));
     }
 
     #[inline]
-    unsafe fn unmap (&self, _mem: &MemoryPtr<Self::Metadata>) {
+    unsafe fn unmap(&self, _mem: &MemoryPtr<Self::Metadata>) {
         // noop
     }
 }
@@ -577,11 +699,160 @@ impl<D: DeviceRef> Drop for Page<D> {
     fn drop(&mut self) {
         unsafe {
             match *self.mapped_ptr.get_mut() {
-                UNINIT | INITIALIZING => {},
-                _ => self.alloc.unmap(&self.inner) 
+                UNINIT | INITIALIZING => {}
+                _ => self.alloc.unmap(&self.inner),
             }
             self.alloc.free(ManuallyDrop::take(&mut self.inner))
         }
+    }
+}
+
+#[repr(transparent)]
+struct StandardDevice(*const Device);
+
+impl Deref for StandardDevice {
+    type Target = Device;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.0 }
+    }
+}
+
+unsafe impl Send for StandardDevice where for<'a> &'a Device: Send {}
+unsafe impl Sync for StandardDevice where for<'a> &'a Device: Sync {}
+
+pub struct Standard<D: DeviceRef> {
+    pages: HashMap<NonZeroU64, Page<StandardDevice>, ahash::RandomState>,
+    device: Pin<D>,
+    min_size: NonZeroU64,
+    max_pages: NonZeroUsize,
+}
+
+impl<D: DeviceRef> Standard<D> {
+    #[inline]
+    pub fn new(device: D, min_size: Option<NonZeroU64>, max_pages: Option<NonZeroUsize>) -> Self
+    where
+        D: Unpin,
+    {
+        Self::new_pinned(Pin::new(device), min_size, max_pages)
+    }
+
+    #[inline]
+    pub unsafe fn new_unchecked(
+        device: D,
+        min_size: Option<NonZeroU64>,
+        max_pages: Option<NonZeroUsize>,
+    ) -> Self {
+        Self::new_pinned(Pin::new_unchecked(device), min_size, max_pages)
+    }
+
+    #[inline]
+    pub fn new_pinned(
+        device: Pin<D>,
+        min_size: Option<NonZeroU64>,
+        max_pages: Option<NonZeroUsize>,
+    ) -> Self {
+        let max_pages = match max_pages {
+            Some(x) => x,
+            None => unsafe {
+                NonZeroUsize::new_unchecked(usize::max(
+                    1,
+                    device
+                        .physical()
+                        .properties()
+                        .limits()
+                        .maxMemoryAllocationCount as usize,
+                ))
+            },
+        };
+
+        let min_size = match min_size {
+            Some(x) => x,
+            None => todo!()
+        };
+
+        return Self {
+            pages: HashMap::with_capacity_and_hasher(1, ahash::RandomState::default()),
+            device,
+            min_size,
+            max_pages
+        };
+    }
+}
+
+unsafe impl<D: DeviceRef> DeviceAllocator for Standard<D> {
+    type Device = Pin<D>;
+    type Metadata = StandardInfo;
+
+    #[inline]
+    fn owned_device(&self) -> Self::Device
+    where
+        Self::Device: Clone,
+    {
+        return self.device.clone();
+    }
+
+    #[inline]
+    fn device(&self) -> &Device {
+        return &self.device;
+    }
+
+    fn allocate(
+        &self,
+        size: vk::DeviceSize,
+        align: vk::DeviceSize,
+        flags: MemoryFlags,
+    ) -> Result<MemoryPtr<Self::Metadata>> {
+        let mut all_without_mem;
+        loop {
+            all_without_mem = true;
+
+            for (page_id, page) in self.pages.iter().filter(|(_, x)| x.flags == flags) {
+                match page.try_allocate(size, align, flags) {
+                    Ok(Some(MemoryPtr { inner, _meta, .. })) => {
+                        return unsafe {
+                            Ok(MemoryPtr::new(
+                                inner,
+                                StandardInfo {
+                                    page_id: *page_id,
+                                    page_info: _meta,
+                                },
+                            ))
+                        }
+                    }
+                    Ok(None) => all_without_mem = false,
+                    Err(Error::Vulkan(vk::ERROR_OUT_OF_DEVICE_MEMORY)) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+
+            if all_without_mem {
+                break;
+            }
+            core::hint::spin_loop();
+        }
+
+        // Allocate new page
+        let page = Page::new(device, size, flags);
+
+        todo!()
+    }
+
+    unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
+        todo!()
+    }
+
+    unsafe fn map(
+        &self,
+        mem: &MemoryPtr<Self::Metadata>,
+        bounds: impl RangeBounds<usize>,
+    ) -> Result<NonNull<[u8]>> {
+        todo!()
+    }
+
+    unsafe fn unmap(&self, mem: &MemoryPtr<Self::Metadata>) {
+        todo!()
     }
 }
 
@@ -599,6 +870,7 @@ impl MemoryMetadata for RawInfo {
 }
 
 /// Metadata for [`Page`]-allocated memory
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PageInfo {
     range: Range<vk::DeviceSize>,
 }
@@ -607,6 +879,19 @@ impl MemoryMetadata for PageInfo {
     #[inline]
     fn range(&self) -> Range<vk::DeviceSize> {
         self.range.clone()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct StandardInfo {
+    page_id: NonZeroU64,
+    page_info: PageInfo,
+}
+
+impl MemoryMetadata for StandardInfo {
+    #[inline]
+    fn range(&self) -> Range<vk::DeviceSize> {
+        self.page_info.range()
     }
 }
 

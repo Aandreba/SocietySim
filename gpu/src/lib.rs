@@ -32,6 +32,7 @@ pub fn generate_people(
         return v;
     }
 
+    #[cfg(target_feature = "Float64")]
     #[inline]
     fn random_f64(seed: &mut f32, x: f32) -> f64 {
         let v = Random2::generate(*seed as f64, x as f64);
@@ -44,7 +45,10 @@ pub fn generate_people(
 
     people[id.x as usize] = Person {
         is_male: ExternBool::new(random(&mut seed, x) >= 0.5f32),
+        #[cfg(target_feature = "Float64")]
         age: GameDuration::from_days((random_f64(&mut seed, x) * 36500f64) as u16),
+        #[cfg(not(target_feature = "Float64"))]
+        age: GameDuration::from_days((random(&mut seed, x) * 36500f32) as u16),
         stats: PersonStats {
             cordiality: (255f32 * random(&mut seed, x)) as u8,
             intelligence: (255f32 * random(&mut seed, x)) as u8,

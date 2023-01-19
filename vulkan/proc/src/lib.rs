@@ -1,6 +1,6 @@
 #![feature(iterator_try_collect, iter_intersperse)]
 
-use std::{ffi::CString, ops::Deref, fs::File};
+use std::{ffi::{CString}, ops::Deref, fs::File};
 use derive_syn_parse::Parse;
 use proc_macro2::{Span};
 use quote::{quote, format_ident};
@@ -10,6 +10,26 @@ use syn::{parse_macro_input, punctuated::Punctuated, Token, LitStr, LitByteStr};
 struct Input {
     #[call(Punctuated::parse_terminated)]
     inputs: Punctuated<LitStr, Token![,]>
+}
+
+#[proc_macro]
+pub fn cstr (str: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(str as LitStr);
+    let str = input.value().into_bytes();
+    
+    match memchr::memchr(0, &str) {
+        Some(nul_pos) => {
+            return syn::Error::new_spanned(input, format!("Null byte found at index {nul_pos}")).into_compile_error().into();
+        },
+        None => {
+            return quote! {{
+                #[allow(unused_unsafe)]
+                unsafe {
+                    ::core::ffi::CStr::from_bytes_with_nul_unchecked(&[#(#str,)* 0u8])
+                }
+            }}.into()
+        },
+    };
 }
 
 #[proc_macro]

@@ -1,7 +1,8 @@
 use std::{ptr::{addr_of, addr_of_mut}, num::NonZeroU64, ffi::CStr};
 use crate::{Result, Entry, device::{Device, DeviceRef}, utils::usize_to_u32, descriptor::DescriptorType};
+use proc::cstr;
 
-const DEFAULT_ENTRY: &CStr = unsafe { cstr!("main") };
+const DEFAULT_ENTRY: &CStr = cstr!("main");
 
 //#[derive(PartialEq, Eq, Hash)]
 pub struct Shader<D: DeviceRef> {

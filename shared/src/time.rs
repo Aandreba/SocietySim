@@ -34,38 +34,38 @@ impl GameDuration {
     }
 
     #[inline]
-    pub const fn as_days (self) -> u16 {
-        return self.days
+    pub const fn as_days(self) -> u16 {
+        return self.days;
     }
 
     #[inline]
-    pub const fn as_weeks (self) -> u16 {
-        return self.days / 7
+    pub const fn as_weeks(self) -> u16 {
+        return self.days / 7;
     }
 
     #[inline]
-    pub fn as_weeks_f32 (self) -> f32 {
-        return (self.days as f32) / 7f32
+    pub fn as_weeks_f32(self) -> f32 {
+        return (self.days as f32) / 7f32;
     }
 
     #[inline]
-    pub const fn as_months (self) -> u16 {
-        return self.days / 30
+    pub const fn as_months(self) -> u16 {
+        return self.days / 30;
     }
 
     #[inline]
-    pub fn as_months_f32 (self) -> f32 {
-        return (self.days as f32) / 30f32
+    pub fn as_months_f32(self) -> f32 {
+        return (self.days as f32) / 30f32;
     }
 
     #[inline]
-    pub const fn as_years (self) -> u8 {
-        return (self.days / 365) as u8
+    pub const fn as_years(self) -> u8 {
+        return (self.days / 365) as u8;
     }
 
     #[inline]
-    pub fn as_years_f32 (self) -> f32 {
-        return (self.days as f32) / 365f32
+    pub fn as_years_f32(self) -> f32 {
+        return (self.days as f32) / 365f32;
     }
 }
 
@@ -119,6 +119,14 @@ impl<'de> serde::Deserialize<'de> for GameDuration {
             }
 
             #[inline]
+            fn visit_u8<E>(self, v: u8) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_u16(v as u16)
+            }
+
+            #[inline]
             fn visit_u16<E>(self, v: u16) -> Result<Self::Value, E>
             where
                 E: serde::de::Error,
@@ -151,7 +159,9 @@ impl<'de> serde::Deserialize<'de> for GameDuration {
                             years = map.next_value::<u8>().map(Some)?
                         }
                         Some(key @ ("days" | "weeks" | "months" | "years")) => {
-                            return Err(serde::de::Error::custom(format_args!("duplicate field `{key}`")))
+                            return Err(serde::de::Error::custom(format_args!(
+                                "duplicate field `{key}`"
+                            )))
                         }
                         Some(other) => {
                             return Err(serde::de::Error::unknown_field(
@@ -172,6 +182,6 @@ impl<'de> serde::Deserialize<'de> for GameDuration {
             }
         }
 
-        return deserializer.deserialize_any(LocalVisitor)
+        return deserializer.deserialize_any(LocalVisitor);
     }
 }

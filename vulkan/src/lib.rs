@@ -24,14 +24,6 @@ macro_rules! flat_mod {
     };
 }
 
-macro_rules! cstr {
-    ($l:literal) => {
-        core::ffi::CStr::from_bytes_with_nul_unchecked(
-            concat!($l, "\0").as_bytes()
-        )
-    };
-}
-
 pub(crate) extern crate vulkan_bindings as vk;
 
 pub mod error;
@@ -49,7 +41,7 @@ pub mod pool;
 //flat_mod! { alloc }
 
 pub type Result<T> = ::core::result::Result<T, error::Error>;
-pub use proc::{include_spv};
+pub use proc::{include_spv, cstr};
 use vk::get_version;
 
 use std::{marker::{PhantomData}, ffi::{CStr, OsStr, c_char}, ptr::{addr_of, addr_of_mut}, mem::transmute, num::NonZeroU64, fmt::Debug, hash::Hash};
@@ -76,6 +68,7 @@ const CREATE_INSTANCE: &CStr = unsafe { cstr!("vkCreateInstance") };
 proc::entry! {
     "vkEnumeratePhysicalDevices",
     "vkGetPhysicalDeviceProperties",
+    "vkGetPhysicalDeviceProperties2",
     "vkCreateDevice",
     "vkGetPhysicalDeviceQueueFamilyProperties",
     "vkGetPhysicalDeviceFeatures",

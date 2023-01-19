@@ -62,7 +62,7 @@ impl PhysicalDevice {
     #[inline]
     pub fn properties (self) -> Box<Properties> {
         let mut props = Box::<Properties>::new_uninit();
-        (Entry::get().get_physical_device_properties)(self.inner.get(), props.as_mut_ptr().cast());
+        (Entry::get().get_physical_device_properties2)(self.inner.get(), props.as_mut_ptr().cast());
         return unsafe { props.assume_init() }
     }
 
@@ -107,38 +107,40 @@ pub enum Type {
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct Properties {
-    inner: vk::PhysicalDeviceProperties
+    inner: vk::PhysicalDeviceProperties2
 }
 
 impl Properties {
+    // TODO GET MAX ALLOC SIZE
+
     #[inline]
     pub fn api_version (&self) -> (u32, u32, u32) {
-        return vk::get_version(self.inner.apiVersion)
+        vk::get_version(self.inner.properties.apiVersion)
     }
 
     #[inline]
     pub fn driver_version (&self) -> (u32, u32, u32) {
-        vk::get_version(self.inner.driverVersion)
+        vk::get_version(self.inner.properties.driverVersion)
     }
 
     #[inline]
     pub fn vendor_id (&self) -> u32 {
-        self.inner.vendorID
+        self.inner.properties.vendorID
     }
     
     #[inline]
     pub fn device_id (&self) -> u32 {
-        self.inner.deviceID
+        self.inner.properties.deviceID
     }
 
     #[inline]
     pub fn name (&self) -> &'_ CStr {
-        return unsafe { CStr::from_ptr(self.inner.deviceName.as_ptr()) }
+        return unsafe { CStr::from_ptr(self.inner.properties.deviceName.as_ptr()) }
     }
 
     #[inline]
     pub fn ty (&self) -> Type {
-        match self.inner.deviceType {
+        match self.inner.properties.deviceType {
             vk::PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU => Type::IntegratedGpu,
             vk::PHYSICAL_DEVICE_TYPE_DISCRETE_GPU => Type::DiscreteGpu,
             vk::PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU => Type::VirtualGpu,
@@ -149,12 +151,12 @@ impl Properties {
 
     #[inline]
     pub fn limits (&self) -> &vk::PhysicalDeviceLimits {
-        return &self.inner.limits
+        return &self.inner.properties.limits
     }
 
     #[inline]
     pub fn into_raw (self) -> vk::PhysicalDeviceProperties {
-        return self.inner
+        return self.inner.properties
     }
 
     // TODO other

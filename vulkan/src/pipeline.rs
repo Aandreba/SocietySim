@@ -1,7 +1,8 @@
 use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ffi::CStr};
 use crate::{shader::{LayoutCreateFlags, ShaderStages, Shader}, Entry, Result, device::{Device, DeviceRef}, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSets}};
+use proc::cstr;
 
-const DEFAULT_ENTRY: &CStr = unsafe { cstr!("main") };
+const DEFAULT_ENTRY: &CStr = cstr!("main");
 
 pub struct ComputeBuilder<'a, D> {
     pipe_flags: PipelineFlags,
