@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, ptr::addr_of_mut, ffi::CStr, fmt::Debug, mem::MaybeUninit, hash::Hash};
+use std::{num::NonZeroU64, ptr::addr_of_mut, ffi::{CStr, c_void}, fmt::Debug, mem::MaybeUninit, hash::Hash, marker::PhantomPinned, pin::Pin, sync::Arc};
 use crate::{vk, Entry, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -60,10 +60,28 @@ impl PhysicalDevice {
     }
 
     #[inline]
-    pub fn properties (self) -> Box<Properties> {
-        let mut props = Box::<Properties>::new_uninit();
-        (Entry::get().get_physical_device_properties2)(self.inner.get(), props.as_mut_ptr().cast());
-        return unsafe { props.assume_init() }
+    pub fn properties (self) -> Pin<Arc<Properties>> {
+        let mut props_arc = Arc::<Properties>::new_uninit();
+        unsafe {
+            let props = Arc::get_mut_unchecked(&mut props_arc).as_mut_ptr().cast::<vk::PhysicalDeviceProperties2>();
+            let maintainence = props.add(1).cast::<vk::PhysicalDeviceMaintenance3Properties>();
+
+            // Set `maintainence` as next property instyance
+            props.byte_add(core::mem::size_of::<vk::StructureType>())
+                .cast::<*mut c_void>()
+                .write(maintainence.cast());
+
+            // Initialize maintainence
+            maintainence.write(vk::PhysicalDeviceMaintenance3Properties {
+                sType: vk::STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES,
+                pNext: core::ptr::null_mut(),
+                maxPerSetDescriptors: 0,
+                maxMemoryAllocationSize: 0,
+            });
+    
+            (Entry::get().get_physical_device_properties2)(self.inner.get(), props);
+            return Pin::new_unchecked(props_arc.assume_init())
+        }
     }
 
     #[inline]
@@ -105,42 +123,42 @@ pub enum Type {
 }
 
 #[derive(Clone)]
-#[repr(transparent)]
+#[repr(C)]
 pub struct Properties {
-    inner: vk::PhysicalDeviceProperties2
+    props: vk::PhysicalDeviceProperties2,
+    maintainence: vk::PhysicalDeviceMaintenance3Properties,
+    _pin: PhantomPinned
 }
 
 impl Properties {
-    // TODO GET MAX ALLOC SIZE
-
     #[inline]
     pub fn api_version (&self) -> (u32, u32, u32) {
-        vk::get_version(self.inner.properties.apiVersion)
+        vk::get_version(self.props.properties.apiVersion)
     }
 
     #[inline]
     pub fn driver_version (&self) -> (u32, u32, u32) {
-        vk::get_version(self.inner.properties.driverVersion)
+        vk::get_version(self.props.properties.driverVersion)
     }
 
     #[inline]
     pub fn vendor_id (&self) -> u32 {
-        self.inner.properties.vendorID
+        self.props.properties.vendorID
     }
     
     #[inline]
     pub fn device_id (&self) -> u32 {
-        self.inner.properties.deviceID
+        self.props.properties.deviceID
     }
 
     #[inline]
     pub fn name (&self) -> &'_ CStr {
-        return unsafe { CStr::from_ptr(self.inner.properties.deviceName.as_ptr()) }
+        return unsafe { CStr::from_ptr(self.props.properties.deviceName.as_ptr()) }
     }
 
     #[inline]
     pub fn ty (&self) -> Type {
-        match self.inner.properties.deviceType {
+        match self.props.properties.deviceType {
             vk::PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU => Type::IntegratedGpu,
             vk::PHYSICAL_DEVICE_TYPE_DISCRETE_GPU => Type::DiscreteGpu,
             vk::PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU => Type::VirtualGpu,
@@ -151,14 +169,24 @@ impl Properties {
 
     #[inline]
     pub fn limits (&self) -> &vk::PhysicalDeviceLimits {
-        return &self.inner.properties.limits
+        return &self.props.properties.limits
+    }
+
+    // #[inline]
+    // pub unsafe fn into_raw (self) -> vk::PhysicalDeviceProperties {
+    //     return self.props.properties
+    // }
+
+    #[inline]
+    pub fn max_descriptors_per_set (&self) -> u32 {
+        return self.maintainence.maxPerSetDescriptors
     }
 
     #[inline]
-    pub fn into_raw (self) -> vk::PhysicalDeviceProperties {
-        return self.inner.properties
+    pub fn max_allocation_size (&self) -> u64 {
+        return self.maintainence.maxMemoryAllocationSize
     }
-
+ 
     // TODO other
 }
 

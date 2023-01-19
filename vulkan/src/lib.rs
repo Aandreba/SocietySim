@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "alloc", feature(allocator_api))]
-#![feature(is_some_and, type_alias_impl_trait, ptr_metadata, new_uninit, trait_alias, pointer_byte_offsets)]
+#![feature(get_mut_unchecked, is_some_and, type_alias_impl_trait, ptr_metadata, new_uninit, trait_alias, pointer_byte_offsets)]
 
 //! https://vulkan-tutorial.com/
 
@@ -37,6 +37,7 @@ pub mod utils;
 pub mod pipeline;
 pub mod descriptor;
 pub mod pool;
+pub mod sync;
 
 //flat_mod! { alloc }
 
@@ -101,6 +102,16 @@ proc::entry! {
     "vkWaitForFences",
     "vkEnumerateInstanceExtensionProperties",
     "vkCmdPushConstants",
+    "vkCreateEvent",
+    "vkSetEvent",
+    "vkResetEvent",
+    "vkGetEventStatus",
+    "vkDestroyEvent",
+    "vkCmdSetEvent",
+    "vkCmdResetEvent",
+    "vkResetFences",
+    "vkGetFenceStatus",
+    "vkQueueBindSparse",
     // Destructors
     "vkDestroyInstance",
     "vkDestroyDevice",

@@ -1,5 +1,5 @@
-use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, sync::{TryLockError, RwLockWriteGuard, RwLock, RwLockReadGuard}, marker::PhantomData, ops::{RangeBounds, Bound, Deref, Index}, slice::SliceIndex, ffi::c_void};
-use crate::{Result, Entry, physical_dev::Family, device::{Device, DeviceRef}, utils::usize_to_u32, pipeline::Pipeline, descriptor::{DescriptorSet}, shader::ShaderStages};
+use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, sync::{TryLockError, RwLockWriteGuard, RwLock, RwLockReadGuard}, slice::SliceIndex, ffi::c_void, marker::PhantomData, ops::{RangeBounds, Bound, Index}};
+use crate::{Result, Entry, physical_dev::Family, device::{Device, DeviceRef}, utils::usize_to_u32, pipeline::{Pipeline, PipelineShaderStages, PipelineStages}, shader::ShaderStages, descriptor::DescriptorSet};
 
 #[derive(Debug)]
 pub struct CommandPool<D: DeviceRef> {
@@ -41,6 +41,11 @@ impl<D: DeviceRef> CommandPool<D> {
         return self.inner.get()
     }
 
+    #[inline]
+    pub fn owned_device (&self) -> D where D: Clone {
+        return self.parent.clone()
+    }
+    
     #[inline]
     pub fn device (&self) -> &Device {
         return &self.parent

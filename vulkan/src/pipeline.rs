@@ -48,7 +48,7 @@ impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
         };
 
         if !done {
-            self.pool_sizes.push(vk::DescriptorPoolSize { typ: ty as vk::DescriptorType, descriptorCount: 1  });
+            self.pool_sizes.push(vk::DescriptorPoolSize { typ: ty as vk::DescriptorType, descriptorCount: 1 });
         }
 
         self.bindings.push(vk::DescriptorSetLayoutBinding {
@@ -124,11 +124,12 @@ impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
             return Err(vk::ERROR_UNKNOWN.into())
         }
 
-        // Create pipeline
+        // Create pipeline (TODO FIX BUG)
         let mut pipeline = 0;
         let info = vk::ComputePipelineCreateInfo {
             sType: vk::STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
             pNext: core::ptr::null(),
+            //flags: vk::PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT, 
             flags: self.pipe_flags.bits(),
             stage: vk::PipelineShaderStageCreateInfo {
                 sType: vk::STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -137,12 +138,17 @@ impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
                 stage: ShaderStages::COMPUTE.bits(),
                 module: shader.module(),
                 pName: self.entry.as_ptr(),
+                //pName: b"compute_personal_event\0".as_ptr().cast(),
                 pSpecializationInfo: core::ptr::null(),
             },
             layout: layout.get(),
             basePipelineHandle: vk::NULL_HANDLE,
             basePipelineIndex: 0,
         };
+
+        println!("{:#?}, {:#?}, {:#?}, {:#?}", self.pipe_flags, shader.module(), self.entry, layout);
+        println!("{:#?}, {:#?}, {:#?}", self.device.id(), cache.as_ref().map_or(vk::NULL_HANDLE, PipelineCache::id), pipeline);
+
         match (entry.create_compute_pipelines)(
             self.device.id(),
             cache.as_ref().map_or(vk::NULL_HANDLE, PipelineCache::id),
@@ -303,11 +309,65 @@ bitflags::bitflags! {
     }
 
     #[repr(transparent)]
-    pub struct PipelineStageFlags: vk::PipelineShaderStageCreateFlagBits {
+    pub struct PipelineShaderStages: vk::PipelineShaderStageCreateFlagBits {
         const ALLOW_VARYING_SUBGROUP_SIZE = vk::PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT;
         const REQUIRE_FULL_SUBGROUPS = vk::PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT;
         const ALLOW_VARYING_SUBGROUP_SIZE_EXT = vk::PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT_EXT;
         const REQUIRE_FULL_SUBGROUPS_EXT = vk::PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT_EXT;
+    }
+
+    #[repr(transparent)]
+    pub struct PipelineStages: vk::PipelineStageFlagBits {
+        /// Before subsequent commands are processed
+        const TOP_OF_PIPE = vk::PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        /// Draw/DispatchIndirect command fetch
+        const DRAW_INDIRECT = vk::PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+        /// Vertex/index fetch
+        const VERTEX_INPUT = vk::PIPELINE_STAGE_VERTEX_INPUT_BIT;
+        /// Vertex shading
+        const VERTEX_SHADER = vk::PIPELINE_STAGE_VERTEX_SHADER_BIT;
+        /// Tessellation control shading
+        const TESSELLATION_CONTROL_SHADER = vk::PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT;
+        /// Tessellation evaluation shading
+        const TESSELLATION_EVALUATION_SHADER = vk::PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT;
+        /// Geometry shading
+        const GEOMETRY_SHADER = vk::PIPELINE_STAGE_GEOMETRY_SHADER_BIT;
+        /// Fragment shading
+        const FRAGMENT_SHADER = vk::PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        /// Early fragment (depth and stencil) tests
+        const EARLY_FRAGMENT_TESTS = vk::PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        /// Late fragment (depth and stencil) tests
+        const LATE_FRAGMENT_TESTS = vk::PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        /// Color attachment writes
+        const COLOR_ATTACHMENT_OUTPUT = vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        /// Compute shading
+        const COMPUTE_SHADER = vk::PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        /// Transfer/copy operations
+        const TRANSFER = vk::PIPELINE_STAGE_TRANSFER_BIT;
+        /// After previous commands have completed
+        const BOTTOM_OF_PIPE = vk::PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        /// Indicates host (CPU) is a source/sink of the dependency
+        const HOST = vk::PIPELINE_STAGE_HOST_BIT;
+        /// All stages of the graphics pipeline
+        const ALL_GRAPHICS = vk::PIPELINE_STAGE_ALL_GRAPHICS_BIT;
+        /// All stages supported on the queue
+        const ALL_COMMANDS = vk::PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        const NONE = vk::PIPELINE_STAGE_NONE;
+        const TRANSFORM_FEEDBACK_EXT = vk::PIPELINE_STAGE_TRANSFORM_FEEDBACK_BIT_EXT;
+        const CONDITIONAL_RENDERING_EXT = vk::PIPELINE_STAGE_CONDITIONAL_RENDERING_BIT_EXT; // A pipeline stage for conditional rendering predicate fetch
+        const ACCELERATION_STRUCTURE_BUILD_KHR = vk::PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+        const RAY_TRACING_SHADER_KHR = vk::PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+        const SHADING_RATE_IMAGE_NV = vk::PIPELINE_STAGE_SHADING_RATE_IMAGE_BIT_NV;
+        const RAY_TRACING_SHADER_NV = vk::PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_NV;
+        const ACCELERATION_STRUCTURE_BUILD_NV = vk::PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV;
+        const TASK_SHADER_NV = vk::PIPELINE_STAGE_TASK_SHADER_BIT_NV;
+        const MESH_SHADER_NV = vk::PIPELINE_STAGE_MESH_SHADER_BIT_NV;
+        const FRAGMENT_DENSITY_PROCESS_EXT = vk::PIPELINE_STAGE_FRAGMENT_DENSITY_PROCESS_BIT_EXT;
+        const FRAGMENT_SHADING_RATE_ATTACHMENT_KHR = vk::PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
+        const COMMAND_PREPROCESS_NV = vk::PIPELINE_STAGE_COMMAND_PREPROCESS_BIT_NV;
+        const NONE_KHR = vk::PIPELINE_STAGE_NONE_KHR;
+        const TASK_SHADER_EXT = vk::PIPELINE_STAGE_TASK_SHADER_BIT_EXT;
+        const MESH_SHADER_EXT = vk::PIPELINE_STAGE_MESH_SHADER_BIT_EXT;
     }
 }
 

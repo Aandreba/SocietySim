@@ -14,6 +14,9 @@ docfg = "0.1.0"
 async-lock = "2.6.0"
 shared = { path = "shared" }
 rand = "0.8.5"
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json = "1.0.91"
+futures = "0.3.25"
 
 [workspace]
 members = ["shared", "gpu", "vulkan", "vulkan/proc"]

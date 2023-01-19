@@ -1,5 +1,4 @@
 use std::{marker::PhantomData, num::{NonZeroU64}, ptr::{addr_of, addr_of_mut, NonNull}, mem::{MaybeUninit, ManuallyDrop}, ops::{Deref, DerefMut, RangeBounds, Bound}, fmt::Debug};
-use serde::de::DeserializeOwned;
 use vk::{DeviceSize};
 use crate::{Result, Entry, device::{Device}, alloc::{DeviceAllocator, MemoryPtr, MemoryFlags}, utils::u64_to_usize};
 
@@ -51,7 +50,7 @@ impl<T, A: DeviceAllocator> Buffer<T, A> {
 
         return Err(vk::ERROR_INITIALIZATION_FAILED.into())
     }
-
+    
     #[inline]
     pub fn from_sized_iter<I: IntoIterator<Item = T>> (iter: I, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<T, A>> where I::IntoIter: ExactSizeIterator {
         let iter = iter.into_iter();

@@ -1,11 +1,10 @@
 use crate::{
     device::{Device, DeviceRef},
     error::Error,
-    utils::u64_to_usize,
+    utils::{u64_to_usize, UpQueue},
     Entry, Result,
 };
 use std::{
-    collections::HashMap,
     ffi::c_void,
     fmt::Debug,
     marker::PhantomData,
@@ -17,10 +16,11 @@ use std::{
     rc::Rc,
     sync::{
         atomic::{AtomicPtr, Ordering},
-        Arc, Mutex, MutexGuard, TryLockError,
+        Arc, Mutex, TryLockError,
     },
 };
-use vk::MemoryType;
+use once_cell::sync::OnceCell;
+use vk::{MemoryType, DeviceSize};
 
 const UNINIT: *mut c_void = core::ptr::null_mut();
 const INITIALIZING: *mut c_void = NonNull::dangling().as_ptr();
@@ -286,19 +286,19 @@ where
     T::Target: DeviceAllocator,
 {
     type Device = <T::Target as DeviceAllocator>::Device;
-    type Metadata = <T::Target as DeviceAllocator>::Device;
+    type Metadata = <T::Target as DeviceAllocator>::Metadata;
 
     #[inline]
     fn owned_device(&self) -> Self::Device
     where
         Self::Device: Clone,
     {
-        return T::owned_device(self);
+        return <T::Target as DeviceAllocator>::owned_device(self);
     }
 
     #[inline]
     fn device(&self) -> &Device {
-        return T::device(self);
+        return <T::Target as DeviceAllocator>::device(self);
     }
 
     #[inline]
@@ -308,12 +308,12 @@ where
         align: vk::DeviceSize,
         flags: MemoryFlags,
     ) -> Result<MemoryPtr<Self::Metadata>> {
-        return T::allocate(self, size, align, flags);
+        return <T::Target as DeviceAllocator>::allocate(self, size, align, flags);
     }
 
     #[inline]
     unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
-        return T::free(self, ptr);
+        return <T::Target as DeviceAllocator>::free(self, ptr);
     }
 
     #[inline]
@@ -322,12 +322,12 @@ where
         mem: &MemoryPtr<Self::Metadata>,
         bounds: impl RangeBounds<usize>,
     ) -> Result<NonNull<[u8]>> {
-        T::map(self, mem, bounds)
+        <T::Target as DeviceAllocator>::map(self, mem, bounds)
     }
 
     #[inline]
     unsafe fn unmap(&self, mem: &MemoryPtr<Self::Metadata>) {
-        T::unmap(self, mem)
+        <T::Target as DeviceAllocator>::unmap(self, mem)
     }
 }
 
@@ -500,17 +500,34 @@ impl<D: DeviceRef> Page<D> {
         debug_assert_eq!(_flags, self.flags);
 
         return match self.ranges.try_lock() {
-            Ok(ranges) => Self::inner_allocate(self, ranges, size, align).map(Some),
+            Ok(mut ranges) => Self::inner_allocate(&self.inner, &mut ranges, size, align).map(Some),
             Err(TryLockError::Poisoned(e)) => {
-                Self::inner_allocate(self, e.into_inner(), size, align).map(Some)
+                Self::inner_allocate(&self.inner, &mut e.into_inner(), size, align).map(Some)
             }
             Err(_) => Ok(None),
         };
     }
 
+    #[inline]
+    pub(super) fn allocate_mut(
+        &mut self,
+        size: vk::DeviceSize,
+        align: vk::DeviceSize,
+        _flags: MemoryFlags,
+    ) -> Result<MemoryPtr<PageInfo>> {
+        debug_assert_eq!(_flags, self.flags);
+
+        return match self.ranges.get_mut() {
+            Ok(ranges) => Self::inner_allocate(&self.inner, ranges, size, align),
+            Err(e) => {
+                Self::inner_allocate(&self.inner, e.into_inner(), size, align)
+            }
+        };
+    }
+
     fn inner_allocate(
-        &self,
-        mut ranges: MutexGuard<'_, Vec<Range<vk::DeviceSize>>>,
+        inner: &MemoryPtr<RawInfo>,
+        ranges: &mut Vec<Range<vk::DeviceSize>>,
         size: vk::DeviceSize,
         align: vk::DeviceSize,
     ) -> Result<MemoryPtr<PageInfo>> {
@@ -534,7 +551,7 @@ impl<D: DeviceRef> Page<D> {
                 range.start = end;
                 return unsafe {
                     Ok(MemoryPtr::new(
-                        self.inner.inner,
+                        inner.inner,
                         PageInfo { range: start..end },
                     ))
                 };
@@ -547,7 +564,7 @@ impl<D: DeviceRef> Page<D> {
 
                 return unsafe {
                     Ok(MemoryPtr::new(
-                        self.inner.inner,
+                        inner.inner,
                         PageInfo { range: start..end },
                     ))
                 };
@@ -583,12 +600,12 @@ unsafe impl<D: DeviceRef> DeviceAllocator for Page<D> {
         _flags: MemoryFlags,
     ) -> Result<MemoryPtr<PageInfo>> {
         debug_assert_eq!(_flags, self.flags);
-        let ranges = match self.ranges.lock() {
+        let mut ranges = match self.ranges.lock() {
             Ok(x) => x,
             Err(e) => e.into_inner(),
         };
 
-        return Self::inner_allocate(self, ranges, size, align);
+        return Self::inner_allocate(&self.inner, &mut ranges, size, align);
     }
 
     #[inline]
@@ -722,14 +739,13 @@ impl Deref for StandardDevice {
 unsafe impl Send for StandardDevice where for<'a> &'a Device: Send {}
 unsafe impl Sync for StandardDevice where for<'a> &'a Device: Sync {}
 
-pub struct Standard<D: DeviceRef> {
-    pages: HashMap<NonZeroU64, Page<StandardDevice>, ahash::RandomState>,
+pub struct Book<D: DeviceRef> {
+    pages: UpQueue<once_cell::sync::OnceCell<Page<StandardDevice>>>,
     device: Pin<D>,
-    min_size: NonZeroU64,
-    max_pages: NonZeroUsize,
+    range: Range<DeviceSize>
 }
 
-impl<D: DeviceRef> Standard<D> {
+impl<D: DeviceRef> Book<D> {
     #[inline]
     pub fn new(device: D, min_size: Option<NonZeroU64>, max_pages: Option<NonZeroUsize>) -> Self
     where
@@ -753,37 +769,33 @@ impl<D: DeviceRef> Standard<D> {
         min_size: Option<NonZeroU64>,
         max_pages: Option<NonZeroUsize>,
     ) -> Self {
+        let props = once_cell::unsync::Lazy::new(|| device.physical().properties());
+
         let max_pages = match max_pages {
-            Some(x) => x,
-            None => unsafe {
-                NonZeroUsize::new_unchecked(usize::max(
-                    1,
-                    device
-                        .physical()
-                        .properties()
-                        .limits()
-                        .maxMemoryAllocationCount as usize,
-                ))
-            },
+            Some(x) => x.get(),
+            None => usize::max(
+                1,
+                props.limits().maxMemoryAllocationCount as usize,
+            )
         };
 
+        let max_size = u64::max(1, props.max_allocation_size());
         let min_size = match min_size {
-            Some(x) => x,
-            None => todo!()
+            Some(x) => x.get(),
+            None => max_size,
         };
 
         return Self {
-            pages: HashMap::with_capacity_and_hasher(1, ahash::RandomState::default()),
+            pages: UpQueue::new(max_pages),
             device,
-            min_size,
-            max_pages
+            range: min_size..max_size
         };
     }
 }
 
-unsafe impl<D: DeviceRef> DeviceAllocator for Standard<D> {
+unsafe impl<D: DeviceRef> DeviceAllocator for Book<D> {
     type Device = Pin<D>;
-    type Metadata = StandardInfo;
+    type Metadata = BookInfo;
 
     #[inline]
     fn owned_device(&self) -> Self::Device
@@ -804,18 +816,26 @@ unsafe impl<D: DeviceRef> DeviceAllocator for Standard<D> {
         align: vk::DeviceSize,
         flags: MemoryFlags,
     ) -> Result<MemoryPtr<Self::Metadata>> {
-        let mut all_without_mem;
-        loop {
-            all_without_mem = true;
+        if size > self.range.end {
+            #[cfg(debug_assertions)]
+            eprintln!("Tried to allocate too much memory: {} bytes of a maximum of {}", size, self.range.end);
+            return Err(vk::ERROR_OUT_OF_DEVICE_MEMORY.into())
+        }
 
-            for (page_id, page) in self.pages.iter().filter(|(_, x)| x.flags == flags) {
+        loop {
+            let mut all_without_mem = true;
+            let iter = self.pages.iter_indexed()
+                .filter_map(|(i, x)| x.get().map(|x| (i, x)))
+                .filter(|(_, x)| x.flags == flags);
+
+            for (idx, page) in iter {
                 match page.try_allocate(size, align, flags) {
                     Ok(Some(MemoryPtr { inner, _meta, .. })) => {
                         return unsafe {
                             Ok(MemoryPtr::new(
                                 inner,
-                                StandardInfo {
-                                    page_id: *page_id,
+                                BookInfo {
+                                    page_idx: idx,
                                     page_info: _meta,
                                 },
                             ))
@@ -828,31 +848,62 @@ unsafe impl<D: DeviceRef> DeviceAllocator for Standard<D> {
             }
 
             if all_without_mem {
-                break;
+                if let Ok((idx, cell)) = self.pages.try_push(OnceCell::new()) {
+                    unsafe {
+                        let mut page = Page::new(
+                            StandardDevice(self.device.deref()),
+                            u64::max(self.range.start, size),
+                            flags,
+                        )?;
+
+                        let MemoryPtr { inner, _meta, .. } = page.allocate_mut(size, align, flags)?;
+                        let _ = cell.set(page).unwrap_unchecked();
+
+                        return Ok(MemoryPtr::new(
+                            inner,
+                            BookInfo {
+                                page_idx: idx,
+                                page_info: _meta,
+                            },
+                        ))
+                    }
+                }
             }
+
             core::hint::spin_loop();
         }
-
-        // Allocate new page
-        let page = Page::new(device, size, flags);
-
-        todo!()
     }
 
+    #[inline]
     unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
-        todo!()
+        if let Some(page) = self.pages.get(ptr._meta.page_idx).and_then(OnceCell::get) {
+            page.free(MemoryPtr { inner: ptr.inner, _meta: ptr._meta.page_info, _phtm: PhantomData });
+        }
+        #[cfg(debug_assertions)]
+        eprintln!("Invalid page index provided");
     }
 
     unsafe fn map(
         &self,
-        mem: &MemoryPtr<Self::Metadata>,
+        ptr: &MemoryPtr<Self::Metadata>,
         bounds: impl RangeBounds<usize>,
     ) -> Result<NonNull<[u8]>> {
-        todo!()
+        if let Some(page) = self.pages.get(ptr._meta.page_idx).and_then(OnceCell::get) {
+            return page.map(&MemoryPtr { inner: ptr.inner, _meta: ptr._meta.page_info.clone(), _phtm: PhantomData }, bounds);
+        }
+
+        #[cfg(debug_assertions)]
+        eprintln!("Invalid page index provided");
+        return Err(vk::ERROR_MEMORY_MAP_FAILED.into())
     }
 
-    unsafe fn unmap(&self, mem: &MemoryPtr<Self::Metadata>) {
-        todo!()
+    #[inline]
+    unsafe fn unmap(&self, ptr: &MemoryPtr<Self::Metadata>) {
+        if let Some(page) = self.pages.get(ptr._meta.page_idx).and_then(OnceCell::get) {
+            page.unmap(&MemoryPtr { inner: ptr.inner, _meta: ptr._meta.page_info.clone(), _phtm: PhantomData });
+        }
+        #[cfg(debug_assertions)]
+        eprintln!("Invalid page index provided");
     }
 }
 
@@ -882,13 +933,14 @@ impl MemoryMetadata for PageInfo {
     }
 }
 
+/// Metadata for [`Book`]-allocated memory
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct StandardInfo {
-    page_id: NonZeroU64,
+pub struct BookInfo {
+    page_idx: usize,
     page_info: PageInfo,
 }
 
-impl MemoryMetadata for StandardInfo {
+impl MemoryMetadata for BookInfo {
     #[inline]
     fn range(&self) -> Range<vk::DeviceSize> {
         self.page_info.range()

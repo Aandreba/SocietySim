@@ -19,7 +19,7 @@ use spirv_std::{glam::UVec3, macros::debug_printfln, spirv};
 const BASE_CHANCE: f32 = 1f32;
 
 // x = # of people
-#[spirv(compute(threads(1, 1)))]
+#[spirv(compute(threads(1)))]
 pub fn generate_people(
     #[spirv(global_invocation_id)] id: UVec3,
     #[spirv(push_constant)] seed: &f32,

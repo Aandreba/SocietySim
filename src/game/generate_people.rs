@@ -7,8 +7,9 @@ use vulkan::{
     device::DeviceRef,
     pipeline::{ComputeBuilder, Pipeline},
     pool::{CommandPool, CommandBufferUsage, PipelineBindPoint},
-    Result, descriptor::{DescriptorSet, DescriptorType}, utils::u64_to_u32, queue::{Queue, FenceFlags, Fence}, shader::ShaderStages, cstr,
+    Result, descriptor::{DescriptorSet, DescriptorType}, utils::u64_to_u32, queue::{Queue}, shader::ShaderStages, cstr, sync::{Fence, FenceFlags},
 };
+use crate::context::Context;
 
 pub struct GeneratePeople<D: DeviceRef> {
     pipeline: Pipeline<D>,
@@ -30,9 +31,9 @@ impl<D: DeviceRef> GeneratePeople<D> {
     }
 
     #[inline]
-    pub fn generate<Pool: DeviceRef, A: DeviceAllocator> (&mut self, len: u64,  usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A, pool: &mut CommandPool<Pool>, queue: &mut Queue,) -> Result<Buffer<Person, A>> where D: Clone {
+    pub fn generate<Ctx: DeviceRef, A: DeviceAllocator> (&mut self, len: u64,  usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A, ctx: &mut Context<Ctx>) -> Result<Buffer<Person, A>> where D: Clone {
         let people = Buffer::new_uninit(len, usage, flags, memory_flags, alloc)?;
-        return self.call(people, pool, queue)
+        return self.call(people, &mut ctx.pool, &mut ctx.queue)
     }
 
     #[inline]
