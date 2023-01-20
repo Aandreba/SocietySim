@@ -1,4 +1,4 @@
-use crate::{ExternBool, time::GameDuration, simd::{f32x4, f32x2}};
+use crate::{ExternBool, time::GameDuration, simd::{f32x4, f32x2}, chance::Chance};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(not(target_arch = "spirv"), derive(Debug, serde::Serialize, serde::Deserialize))]
@@ -38,10 +38,10 @@ impl Person {
     // } 
 }
 
-#[derive(Clone, Copy, PartialEq, Default)]
+#[derive(Clone, Copy, PartialEq)]
 #[cfg_attr(not(target_arch = "spirv"), derive(Debug))]
 #[repr(C)]
 pub struct Trait {
-    pub weight: PersonStats<f32>,
-    pub offset: PersonStats<i8>
+    pub init_chance: Chance,
+    pub offsets: PersonStats<i8>
 }

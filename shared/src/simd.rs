@@ -431,25 +431,25 @@ impl u32x4 {
 impl Add for u32x4 {
     type Output = u32x4;
 
-    #[cfg(target_arch = "spirv")]
-    #[inline]
-    fn add(self, rhs: Self) -> Self::Output {
-        unsafe {
-            let mut inner = spirv_std::glam::UVec4::default();
-            asm! {
-                "%lhs = OpLoad _ {lhs}",
-                "%rhs = OpLoad _ {rhs}",
-                "%result = OpIAdd typeof{result} %lhs %rhs",
-                "OpStore {result} %result",
-                lhs = in(reg) &self.inner,
-                rhs = in(reg) &rhs.inner,
-                result = in(reg) &mut inner
-            }
-            return Self { inner }
-        }
-    }
+    // #[cfg(target_arch = "spirv")]
+    // #[inline]
+    // fn add(self, rhs: Self) -> Self::Output {
+    //     unsafe {
+    //         let mut inner = spirv_std::glam::UVec4::default();
+    //         asm! {
+    //             "%lhs = OpLoad _ {lhs}",
+    //             "%rhs = OpLoad _ {rhs}",
+    //             "%result = OpIAdd typeof{result} %lhs %rhs",
+    //             "OpStore {result} %result",
+    //             lhs = in(reg) &self.inner,
+    //             rhs = in(reg) &rhs.inner,
+    //             result = in(reg) &mut inner
+    //         }
+    //         return Self { inner }
+    //     }
+    // }
 
-    #[cfg(not(target_arch = "spirv"))]
+    // #[cfg(not(target_arch = "spirv"))]
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         return Self { inner: self.inner + rhs.inner }
@@ -466,25 +466,25 @@ impl AddAssign for u32x4 {
 impl Mul for u32x4 {
     type Output = u32x4;
 
-    #[cfg(target_arch = "spirv")]
-    #[inline]
-    fn mul(self, rhs: Self) -> Self::Output {
-        unsafe {
-            let mut inner = spirv_std::glam::UVec4::default();
-            asm! {
-                "%lhs = OpLoad _ {lhs}",
-                "%rhs = OpLoad _ {rhs}",
-                "%result = OpIMul typeof{result} %lhs %rhs",
-                "OpStore {result} %result",
-                lhs = in(reg) &self.inner,
-                rhs = in(reg) &rhs.inner,
-                result = in(reg) &mut inner
-            }
-            return Self { inner }
-        }
-    }
+    // #[cfg(target_arch = "spirv")]
+    // #[inline]
+    // fn mul(self, rhs: Self) -> Self::Output {
+    //     unsafe {
+    //         let mut inner = spirv_std::glam::UVec4::default();
+    //         asm! {
+    //             "%lhs = OpLoad _ {lhs}",
+    //             "%rhs = OpLoad _ {rhs}",
+    //             "%result = OpIMul typeof{result} %lhs %rhs",
+    //             "OpStore {result} %result",
+    //             lhs = in(reg) &self.inner,
+    //             rhs = in(reg) &rhs.inner,
+    //             result = in(reg) &mut inner
+    //         }
+    //         return Self { inner }
+    //     }
+    // }
 
-    #[cfg(not(target_arch = "spirv"))]
+    // #[cfg(not(target_arch = "spirv"))]
     #[inline]
     fn mul(self, rhs: Self) -> Self::Output {
         return Self { inner: self.inner * rhs.inner }
@@ -495,25 +495,25 @@ impl Mul for u32x4 {
 impl BitXor for u32x4 {
     type Output = u32x4;
 
-    #[cfg(target_arch = "spirv")]
-    #[inline]
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        unsafe {
-            let mut inner = spirv_std::glam::UVec4::default();
-            asm! {
-                "%lhs = OpLoad _ {lhs}",
-                "%rhs = OpLoad _ {rhs}",
-                "%result = OpBitwiseXor typeof{result} %lhs %rhs",
-                "OpStore {result} %result",
-                lhs = in(reg) &self.inner,
-                rhs = in(reg) &rhs.inner,
-                result = in(reg) &mut inner
-            }
-            return Self { inner }
-        }
-    }
+    // #[cfg(target_arch = "spirv")]
+    // #[inline]
+    // fn bitxor(self, rhs: Self) -> Self::Output {
+    //     unsafe {
+    //         let mut inner = spirv_std::glam::UVec4::default();
+    //         asm! {
+    //             "%lhs = OpLoad _ {lhs}",
+    //             "%rhs = OpLoad _ {rhs}",
+    //             "%result = OpBitwiseXor typeof{result} %lhs %rhs",
+    //             "OpStore {result} %result",
+    //             lhs = in(reg) &self.inner,
+    //             rhs = in(reg) &rhs.inner,
+    //             result = in(reg) &mut inner
+    //         }
+    //         return Self { inner }
+    //     }
+    // }
 
-    #[cfg(not(target_arch = "spirv"))]
+    //#[cfg(not(target_arch = "spirv"))]
     #[inline]
     fn bitxor(self, rhs: Self) -> Self::Output {
         return Self { inner: self.inner ^ rhs.inner }

@@ -1,8 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata, rustc_attrs)]
 
-use std::{collections::HashMap, io::BufReader, panic::resume_unwind, path::{Path, PathBuf}, process::Command};
-
+use std::{collections::HashMap, io::BufReader, panic::resume_unwind, path::{Path}, ptr::NonNull};
 use context::Context;
 use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
 use shared::{person::Person, person_event::PersonalEvent, ExternBool};
@@ -12,7 +11,7 @@ use vulkan::{
     buffer::{Buffer, BufferFlags, UsageFlags},
     device::{Device, DeviceRef},
     physical_dev::PhysicalDevice,
-    Entry,
+    Entry, shared::SharedPtr,
 };
 
 use crate::game::{generate_people::GeneratePeople, personal_events::PersonalEvents};
@@ -136,27 +135,42 @@ async fn initialize_personal_events<
 
 #[test]
 fn disassemble () -> anyhow::Result<()> {
-    fn get_path (name: impl AsRef<Path>) -> anyhow::Result<PathBuf> {
-        return ["target", "spirv-builder", "spirv-unknown-vulkan1.1", "release", "deps", "gpu.spvs", name.as_ref().with_extension("spv")].into_iter()
-            .fold(std::env::current_dir()?, |x, y| x.join(y));
+    fn get_path (name: impl AsRef<Path>) -> anyhow::Result<std::path::PathBuf> {
+        return Ok(["target", "spirv-builder", "spirv-unknown-vulkan1.1", "release", "deps", "gpu.spvs"].into_iter()
+            .fold(std::env::current_dir()?, |x, y| x.join(y))
+            .join(name.as_ref().with_extension("spv")));
     }
 
     fn spirv_cross (name: impl AsRef<Path>) -> anyhow::Result<()> {
         let path = get_path(name.as_ref())?;
-        let cmd = Command::new("spirv-cross")
+        let cmd = std::process::Command::new("spirv-cross")
             .arg("--msl")
-            .arg(name)
+            .arg(path)
             .output()?;
 
         if cmd.status.success() {
-            std::fs::write(name.as_ref().with_extension("msl"), cmd.stdout)
+            std::fs::write(name.as_ref().with_extension("msl"), cmd.stdout)?;
         } else {
-            std::io::copy(cmd.stderr, std::io::stdout());
+            std::io::copy(&mut cmd.stderr.as_slice(), &mut std::io::stderr())?;
         }
+        return Ok(())
     }
 
     spirv_cross("generate_people")?;
     spirv_cross("compute_personal_event")?;
+
+    return Ok(())
+}
+
+#[test]
+fn shared_ptr () -> anyhow::Result<()> {
+    let _ = unsafe { Entry::builder(1, 1, 0).build() }?;
+    let phy = PhysicalDevice::first()?;
+    let (dev, queues) = Device::builder(phy).queues(&[1f32]).build().build()?;
+
+    let mut ptr = Box::new(3);
+    let shared = SharedPtr::from_ptr(&dev, NonNull::new(&mut ptr as &mut i32).unwrap())?;
+    println!("{shared:#?}");
 
     return Ok(())
 }

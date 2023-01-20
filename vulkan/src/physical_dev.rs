@@ -8,7 +8,7 @@ use std::{
     num::NonZeroU64,
     pin::Pin,
     ptr::addr_of_mut,
-    sync::Arc,
+    sync::Arc, ops::Deref,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -197,10 +197,10 @@ impl Properties {
         return &self.props.properties.limits;
     }
 
-    // #[inline]
-    // pub unsafe fn into_raw (self) -> vk::PhysicalDeviceProperties {
-    //     return self.props.properties
-    // }
+    #[inline]
+    pub fn as_raw (&self) -> &vk::PhysicalDeviceProperties {
+        return &self.props.properties
+    }
 
     #[inline]
     pub fn max_descriptors_per_set(&self) -> u32 {
@@ -238,6 +238,15 @@ impl Features {
     #[inline]
     pub fn into_raw(self) -> vk::PhysicalDeviceFeatures {
         return self.inner;
+    }
+}
+
+impl Deref for Features {
+    type Target = vk::PhysicalDeviceFeatures;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 

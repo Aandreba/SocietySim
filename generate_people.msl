@@ -1,0 +1,99 @@
+#include <metal_stdlib>
+#include <simd/simd.h>
+
+using namespace metal;
+
+struct _16
+{
+    uchar _m0;
+    uchar _m1;
+    uchar _m2;
+    uchar _m3;
+    uchar _m4;
+    uchar _m5;
+};
+
+struct _17
+{
+    uchar _m0;
+    ushort _m1;
+    _16 _m2;
+};
+
+struct _22
+{
+    uint4 _m0;
+};
+
+struct _23
+{
+    _17 _m0[1];
+};
+
+kernel void generate_people(constant uint* spvBufferSizeConstants [[buffer(25)]], constant _22& _18 [[buffer(0)]], device _23& _19 [[buffer(1)]], uint3 gl_GlobalInvocationID [[thread_position_in_grid]])
+{
+    bool _325 = false;
+    constant uint& _19BufferSize = spvBufferSizeConstants[1];
+    uint _68;
+    _17 _304;
+    do
+    {
+        _68 = gl_GlobalInvocationID.x;
+        float2 _73 = float2(12.98980045318603515625, 78.233001708984375) * float2(float(_68));
+        float _331 = _73.x + _73.y;
+        float _327 = _331;
+        float _78 = fract(sin(_331) * 43758.546875) * 4294967296.0;
+        uint _85 = (_78 > 4294967040.0) ? 4294967295u : ((isunordered(_78, 0.0) || _78 < 0.0) ? 0u : uint(_78));
+        uint _87 = _18._m0.x + _85;
+        uint _98 = _18._m0.y + _85;
+        uint _120 = _18._m0.w + _85;
+        uint _130 = _87 + _120;
+        uint _141 = (_18._m0.z + _85) ^ _87;
+        uint _142 = _120 ^ _98;
+        uint _143 = _98 ^ _141;
+        uint _144 = _87 ^ _142;
+        uint _156 = _144 + _142;
+        uint _167 = (_141 ^ (_98 << uint(9))) ^ _144;
+        uint _168 = _142 ^ _143;
+        uint _169 = _143 ^ _167;
+        uint _170 = _144 ^ _168;
+        uint _181 = _170 + _168;
+        uint _192 = (_167 ^ (_143 << uint(9))) ^ _170;
+        uint _193 = _168 ^ _169;
+        uint _194 = _169 ^ _192;
+        uint _195 = _170 ^ _193;
+        uint _205 = _195 + _193;
+        uint _216 = (_192 ^ (_169 << uint(9))) ^ _195;
+        uint _217 = _193 ^ _194;
+        uint _218 = _194 ^ _216;
+        uint _219 = _195 ^ _217;
+        uint _229 = _219 + _217;
+        uint _240 = (_216 ^ (_194 << uint(9))) ^ _219;
+        uint _241 = _217 ^ _218;
+        uint _242 = _218 ^ _240;
+        uint _243 = _219 ^ _241;
+        uint _253 = _243 + _241;
+        uint _263 = _241 ^ _242;
+        uint _265 = _243 ^ _263;
+        uint _274 = _265 + _263;
+        uint _283 = _263 ^ (_242 ^ ((_240 ^ (_218 << uint(9))) ^ _243));
+        uint _284 = _265 ^ _283;
+        uint _293 = _284 + _283;
+        _304 = _17{ (((_130 + _87) & 1u) == 1u) ? uchar(1) : uchar(0), ushort(ushort(_156 + _144) % ushort(36500)), _16{ uchar(_181 + _170), uchar(_205 + _195), uchar(_229 + _219), uchar(_253 + _243), uchar(_274 + _265), uchar(_293 + _284) } };
+        if (_68 < ((_19BufferSize - 0) / 10))
+        {
+            break;
+        }
+        else
+        {
+            for (;;)
+            {
+            }
+            break; // unreachable workaround
+        }
+        break; // unreachable workaround
+    } while(false);
+    _19._m0[_68] = _304;
+    _325 = true;
+}
+

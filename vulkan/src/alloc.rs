@@ -332,7 +332,7 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct RawInner<D>(pub D);
+pub(crate) struct RawInner<D>(pub D);
 
 unsafe impl<D: DeviceRef> DeviceAllocator for RawInner<D> {
     type Device = D;

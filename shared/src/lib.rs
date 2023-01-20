@@ -5,6 +5,7 @@ pub mod time;
 pub mod person;
 pub mod person_event;
 pub mod simd;
+pub mod chance;
 //pub mod sync;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
