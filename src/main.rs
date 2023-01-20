@@ -41,8 +41,8 @@ async fn main() -> anyhow::Result<()> {
 
     let phy = PhysicalDevice::first()?;
     let (dev, queues) = Device::builder(phy).queues(&[1f32]).build().build()?;
-    let mut ctx = Context::new(&dev, queues.into_iter().next().unwrap())?;
     let alloc = Page::new(&dev, 2048, MemoryFlags::MAPABLE)?;
+    let mut ctx = Context::new(&dev, queues.into_iter().next().unwrap())?;
 
     let people = initialize_population(10_000, &mut ctx, &alloc)?;
     let (_event_names, events) =

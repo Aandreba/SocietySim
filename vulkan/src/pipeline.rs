@@ -135,7 +135,7 @@ impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
                 sType: vk::STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                 pNext: core::ptr::null(),
                 flags: 0,
-                stage: ShaderStages::COMPUTE.bits(),
+                stage: vk::SHADER_STAGE_COMPUTE_BIT,
                 module: shader.module(),
                 pName: self.entry.as_ptr(),
                 //pName: b"compute_personal_event\0".as_ptr().cast(),

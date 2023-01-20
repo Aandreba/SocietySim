@@ -64,7 +64,7 @@ const LIB_PATH: &str = "libvulkan.dylib";
 
 static mut CURRENT_ENTRY: Option<Entry> = None;
 const ENTRY_POINT: &[u8] = b"vkGetInstanceProcAddr\0";
-const CREATE_INSTANCE: &CStr = unsafe { cstr!("vkCreateInstance") };
+const CREATE_INSTANCE: &CStr = cstr!("vkCreateInstance");
 
 proc::entry! {
     "vkEnumeratePhysicalDevices",
