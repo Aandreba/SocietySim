@@ -491,6 +491,7 @@ impl Mul for u32x4 {
     }
 }
 
+// TODO FIX INLINE ASM BUG 
 impl BitXor for u32x4 {
     type Output = u32x4;
 
