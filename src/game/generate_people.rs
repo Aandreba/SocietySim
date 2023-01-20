@@ -7,7 +7,7 @@ use vulkan::{
     device::DeviceRef,
     pipeline::{ComputeBuilder, Pipeline},
     pool::{CommandPool, CommandBufferUsage, PipelineBindPoint},
-    Result, descriptor::{DescriptorSet, DescriptorType}, utils::u64_to_u32, queue::{Queue}, shader::ShaderStages, cstr, sync::{Fence, FenceFlags},
+    Result, descriptor::{DescriptorSet, DescriptorType}, utils::u64_to_u32, queue::{Queue}, shader::ShaderStages, cstr, sync::{Fence, FenceFlags}, include_spv,
 };
 use crate::context::Context;
 
@@ -18,11 +18,12 @@ pub struct GeneratePeople<D: DeviceRef> {
 
 impl<D: DeviceRef> GeneratePeople<D> {
     #[inline]
-    pub fn new (dev: D, words: &[u32]) -> Result<Self> where D: Clone {
+    pub fn new (dev: D) -> Result<Self> where D: Clone {
+        const WORDS: &[u32] = include_spv!("generate_people.spv");
         let pipeline = ComputeBuilder::new(dev)
             .entry(cstr!("generate_people"))
             .binding(DescriptorType::StorageBuffer, 1)
-            .build(words)?;
+            .build(WORDS)?;
 
         return Ok(Self {
             pipeline,

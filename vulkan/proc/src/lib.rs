@@ -1,6 +1,6 @@
 #![feature(iterator_try_collect, iter_intersperse)]
 
-use std::{ffi::{CString}, ops::Deref, fs::File};
+use std::{ffi::{CString}, ops::Deref, fs::File, env::join_paths, path::Path};
 use derive_syn_parse::Parse;
 use proc_macro2::{Span};
 use quote::{quote, format_ident};
@@ -44,8 +44,10 @@ pub fn include_spv (path: proc_macro::TokenStream) -> proc_macro::TokenStream {
     }
 
     let path = parse_macro_input!(path as LitStr).value();
-    let path = tri!(std::env::var(&path));
-    let mut file = tri!(File::open(&path));
+    let path = ["target", "spirv-builder", "spirv-unknown-vulkan1.1", "release", "deps", "gpu.spvs", &path].into_iter()
+        .fold(tri!(std::env::current_dir()), |x, y| x.join(y));
+
+    let mut file = tri!(File::open(path));
     
     let spv = tri!(read_spv(&mut file));
     let len = spv.len();

@@ -15,8 +15,6 @@ use vulkan::{
     Entry,
 };
 
-const WORDS: &[u32] = include_spv!("gpu.spv");
-
 use crate::game::{generate_people::GeneratePeople, personal_events::PersonalEvents};
 pub mod context;
 pub mod game;
@@ -48,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
     let (_event_names, events) =
         initialize_personal_events("game/personal_events", &mut ctx, &alloc).await?;
 
-    let mut evt = PersonalEvents::new(&dev, WORDS)?;
+    let mut evt = PersonalEvents::new(&dev)?;
     let result = evt.call(&people, &events, &mut ctx)?;
 
     let result = result.map(..)?;
@@ -70,7 +68,7 @@ fn initialize_population<D: Clone + DeviceRef, A: DeviceAllocator>(
     ctx: &mut Context<D>,
     alloc: A,
 ) -> vulkan::Result<Buffer<Person, A>> {
-    let mut generator = GeneratePeople::new(ctx.owned_device(), WORDS)?;
+    let mut generator = GeneratePeople::new(ctx.owned_device())?;
     return generator.generate(
         capacity,
         UsageFlags::STORAGE_BUFFER,

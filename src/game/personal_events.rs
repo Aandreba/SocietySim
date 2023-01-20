@@ -6,7 +6,7 @@ use vulkan::{
     device::DeviceRef,
     pipeline::{ComputeBuilder, Pipeline},
     pool::{CommandBufferUsage, PipelineBindPoint},
-    Result, descriptor::{DescriptorSet, DescriptorType}, utils::u64_to_u32, shader::ShaderStages, cstr, sync::{FenceFlags, Fence},
+    Result, descriptor::{DescriptorSet, DescriptorType}, utils::u64_to_u32, shader::ShaderStages, cstr, sync::{FenceFlags, Fence}, include_spv,
 };
 
 use crate::context::Context;
@@ -18,13 +18,15 @@ pub struct PersonalEvents<D: DeviceRef> {
 
 impl<D: DeviceRef> PersonalEvents<D> {
     #[inline]
-    pub fn new (dev: D, words: &[u32]) -> Result<Self> where D: Clone {
+    pub fn new (dev: D) -> Result<Self> where D: Clone {
+        const WORDS: &[u32] = include_spv!("compute_personal_event.spv");
+
         let pipeline = ComputeBuilder::new(dev)
             .entry(cstr!("compute_personal_event"))
             .binding(DescriptorType::StorageBuffer, 1)
             .binding(DescriptorType::StorageBuffer, 1)
             .binding(DescriptorType::StorageBuffer, 1)
-            .build(words)?;
+            .build(WORDS)?;
 
         return Ok(Self {
             pipeline,
