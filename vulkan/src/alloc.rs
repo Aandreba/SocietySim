@@ -779,7 +779,7 @@ impl<D: DeviceRef> Book<D> {
             )
         };
 
-        let max_size = u64::max(1, props.max_allocation_size());
+        let max_size = u64::max(1, props.max_allocation_size() / (max_pages as u64));
         let min_size = match min_size {
             Some(x) => x.get(),
             None => max_size,

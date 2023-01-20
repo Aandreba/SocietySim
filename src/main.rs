@@ -1,16 +1,16 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata, rustc_attrs)]
 
-use std::{collections::HashMap, io::BufReader, panic::resume_unwind, path::Path};
+use std::{collections::HashMap, io::BufReader, panic::resume_unwind, path::{Path, PathBuf}, process::Command};
 
 use context::Context;
-use futures::{pin_mut, stream::FuturesUnordered, FutureExt, Stream, StreamExt, TryStreamExt};
+use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
 use shared::{person::Person, person_event::PersonalEvent, ExternBool};
+use tokio::runtime::Runtime;
 use vulkan::{
-    alloc::{DeviceAllocator, MemoryFlags, Page},
+    alloc::{DeviceAllocator, MemoryFlags, Book},
     buffer::{Buffer, BufferFlags, UsageFlags},
     device::{Device, DeviceRef},
-    extension_props, include_spv,
     physical_dev::PhysicalDevice,
     Entry,
 };
@@ -29,22 +29,19 @@ macro_rules! flat_mod {
     };
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     //let _ = unsafe { Entry::builder(1, 0, 0).build_in("/opt/homebrew/Cellar/molten-vk/1.2.1/lib/libMoltenVK.dylib") }?;
     let _ = unsafe { Entry::builder(1, 1, 0).build() }?;
-
-    #[cfg(debug_assertions)]
-    println!("{:#?}", extension_props());
+    let runtime = Runtime::new()?;
 
     let phy = PhysicalDevice::first()?;
     let (dev, queues) = Device::builder(phy).queues(&[1f32]).build().build()?;
-    let alloc = Page::new(&dev, 2048, MemoryFlags::MAPABLE)?;
+    let alloc = Book::new(&dev, None, None);
     let mut ctx = Context::new(&dev, queues.into_iter().next().unwrap())?;
 
-    let people = initialize_population(10_000, &mut ctx, &alloc)?;
+    let people = initialize_population(10, &mut ctx, &alloc)?;
     let (_event_names, events) =
-        initialize_personal_events("game/personal_events", &mut ctx, &alloc).await?;
+        runtime.block_on(initialize_personal_events("game/personal_events", &mut ctx, &alloc))?;
 
     let mut evt = PersonalEvents::new(&dev)?;
     let result = evt.call(&people, &events, &mut ctx)?;
@@ -135,4 +132,31 @@ async fn initialize_personal_events<
     drop(map);
 
     return unsafe { Ok((names, events.assume_init())) };
+}
+
+#[test]
+fn disassemble () -> anyhow::Result<()> {
+    fn get_path (name: impl AsRef<Path>) -> anyhow::Result<PathBuf> {
+        return ["target", "spirv-builder", "spirv-unknown-vulkan1.1", "release", "deps", "gpu.spvs", name.as_ref().with_extension("spv")].into_iter()
+            .fold(std::env::current_dir()?, |x, y| x.join(y));
+    }
+
+    fn spirv_cross (name: impl AsRef<Path>) -> anyhow::Result<()> {
+        let path = get_path(name.as_ref())?;
+        let cmd = Command::new("spirv-cross")
+            .arg("--msl")
+            .arg(name)
+            .output()?;
+
+        if cmd.status.success() {
+            std::fs::write(name.as_ref().with_extension("msl"), cmd.stdout)
+        } else {
+            std::io::copy(cmd.stderr, std::io::stdout());
+        }
+    }
+
+    spirv_cross("generate_people")?;
+    spirv_cross("compute_personal_event")?;
+
+    return Ok(())
 }

@@ -1,25 +1,35 @@
-use std::{num::NonZeroU64, ptr::addr_of_mut, ffi::{CStr, c_void}, fmt::Debug, mem::MaybeUninit, hash::Hash, marker::PhantomPinned, pin::Pin, sync::Arc};
 use crate::{vk, Entry, Result};
+use std::{
+    ffi::{CStr},
+    fmt::Debug,
+    hash::Hash,
+    marker::PhantomPinned,
+    mem::MaybeUninit,
+    num::NonZeroU64,
+    pin::Pin,
+    ptr::addr_of_mut,
+    sync::Arc,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct PhysicalDevice {
-    inner: NonZeroU64
+    inner: NonZeroU64,
 }
 
 impl PhysicalDevice {
     #[inline]
-    pub fn first () -> Result<PhysicalDevice> {
+    pub fn first() -> Result<PhysicalDevice> {
         Self::first_from_entry(Entry::get())
     }
-    
+
     #[inline]
-    pub fn get_all () -> Result<Vec<PhysicalDevice>> {
+    pub fn get_all() -> Result<Vec<PhysicalDevice>> {
         Self::from_entry(Entry::get())
     }
 
     #[inline]
-    fn from_entry (entry: &Entry) -> Result<Vec<PhysicalDevice>> {
+    fn from_entry(entry: &Entry) -> Result<Vec<PhysicalDevice>> {
         let mut count = 0;
         tri! {
             (entry.enumerate_physical_devices)(entry.instance.get(), addr_of_mut!(count), core::ptr::null_mut())
@@ -33,77 +43,92 @@ impl PhysicalDevice {
         unsafe {
             debug_assert!(!devices.iter().any(|x| *x == 0));
             devices.set_len(count as usize);
-            return Ok(core::mem::transmute(devices))
+            return Ok(core::mem::transmute(devices));
         }
     }
 
     #[inline]
-    fn first_from_entry (entry: &Entry) -> Result<PhysicalDevice> {
+    fn first_from_entry(entry: &Entry) -> Result<PhysicalDevice> {
         let mut device = MaybeUninit::uninit();
-        
-        match (entry.enumerate_physical_devices)(entry.instance.get(), &mut 1, device.as_mut_ptr()) {
-            vk::SUCCESS | vk::INCOMPLETE => {},
-            e => return Err(e.into())
+
+        match (entry.enumerate_physical_devices)(entry.instance.get(), &mut 1, device.as_mut_ptr())
+        {
+            vk::SUCCESS | vk::INCOMPLETE => {}
+            e => return Err(e.into()),
         }
 
         unsafe {
             if let Some(inner) = NonZeroU64::new(device.assume_init()) {
-                return Ok(PhysicalDevice { inner })
+                return Ok(PhysicalDevice { inner });
             }
-            return Err(vk::ERROR_UNKNOWN.into())
+            return Err(vk::ERROR_UNKNOWN.into());
         }
     }
 
     #[inline]
-    pub fn id (self) -> u64 {
-        return self.inner.get()
+    pub fn id(self) -> u64 {
+        return self.inner.get();
     }
 
     #[inline]
-    pub fn properties (self) -> Pin<Arc<Properties>> {
-        let mut props_arc = Arc::<Properties>::new_uninit();
-        unsafe {
-            let props = Arc::get_mut_unchecked(&mut props_arc).as_mut_ptr().cast::<vk::PhysicalDeviceProperties2>();
-            let maintainence = props.add(1).cast::<vk::PhysicalDeviceMaintenance3Properties>();
+    pub fn properties(self) -> Pin<Arc<Properties>> {
+        let mut props_arc = Arc::<Properties>::new(Properties {
+            props: vk::PhysicalDeviceProperties2 {
+                sType: vk::STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                pNext: core::ptr::null_mut(),
+                properties: unsafe { #[allow(invalid_value)] MaybeUninit::uninit().assume_init() },
+            },
 
-            // Set `maintainence` as next property instyance
-            props.byte_add(core::mem::size_of::<vk::StructureType>())
-                .cast::<*mut c_void>()
-                .write(maintainence.cast());
-
-            // Initialize maintainence
-            maintainence.write(vk::PhysicalDeviceMaintenance3Properties {
+            maintainence: vk::PhysicalDeviceMaintenance3Properties {
                 sType: vk::STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES,
                 pNext: core::ptr::null_mut(),
                 maxPerSetDescriptors: 0,
                 maxMemoryAllocationSize: 0,
-            });
-    
-            (Entry::get().get_physical_device_properties2)(self.inner.get(), props);
-            return Pin::new_unchecked(props_arc.assume_init())
+            },
+
+            _pin: PhantomPinned,
+        });
+
+        unsafe {
+            let props = Arc::get_mut_unchecked(&mut props_arc);
+            props.props.pNext = addr_of_mut!(props.maintainence).cast();
+
+            (Entry::get().get_physical_device_properties2)(self.inner.get(), addr_of_mut!(props.props));
+            return Pin::new_unchecked(props_arc);
         }
     }
 
     #[inline]
-    pub fn features (self) -> Box<Features> {
+    pub fn features(self) -> Box<Features> {
         let mut features = Box::<Features>::new_uninit();
         (Entry::get().get_physical_device_features)(self.inner.get(), features.as_mut_ptr().cast());
-        return unsafe { features.assume_init() }
+        return unsafe { features.assume_init() };
     }
 
-    pub fn families (self) -> impl Iterator<Item = Family> {
+    pub fn families(self) -> impl Iterator<Item = Family> {
         let mut count = 0;
-        (Entry::get().get_physical_device_queue_family_properties)(self.inner.get(), addr_of_mut!(count), core::ptr::null_mut());
-        
+        (Entry::get().get_physical_device_queue_family_properties)(
+            self.inner.get(),
+            addr_of_mut!(count),
+            core::ptr::null_mut(),
+        );
+
         let mut result = Vec::with_capacity(count as usize);
-        (Entry::get().get_physical_device_queue_family_properties)(self.inner.get(), addr_of_mut!(count), result.as_mut_ptr());
+        (Entry::get().get_physical_device_queue_family_properties)(
+            self.inner.get(),
+            addr_of_mut!(count),
+            result.as_mut_ptr(),
+        );
         unsafe { result.set_len(count as usize) }
-        
-        return result.into_iter()
+
+        return result
+            .into_iter()
             .enumerate()
-            .map(move |(idx, inner)| 
-                Family { idx: idx as u32, inner, parent: self }
-            )
+            .map(move |(idx, inner)| Family {
+                idx: idx as u32,
+                inner,
+                parent: self,
+            });
     }
 }
 
@@ -127,49 +152,49 @@ pub enum Type {
 pub struct Properties {
     props: vk::PhysicalDeviceProperties2,
     maintainence: vk::PhysicalDeviceMaintenance3Properties,
-    _pin: PhantomPinned
+    _pin: PhantomPinned,
 }
 
 impl Properties {
     #[inline]
-    pub fn api_version (&self) -> (u32, u32, u32) {
+    pub fn api_version(&self) -> (u32, u32, u32) {
         vk::get_version(self.props.properties.apiVersion)
     }
 
     #[inline]
-    pub fn driver_version (&self) -> (u32, u32, u32) {
+    pub fn driver_version(&self) -> (u32, u32, u32) {
         vk::get_version(self.props.properties.driverVersion)
     }
 
     #[inline]
-    pub fn vendor_id (&self) -> u32 {
+    pub fn vendor_id(&self) -> u32 {
         self.props.properties.vendorID
     }
-    
+
     #[inline]
-    pub fn device_id (&self) -> u32 {
+    pub fn device_id(&self) -> u32 {
         self.props.properties.deviceID
     }
 
     #[inline]
-    pub fn name (&self) -> &'_ CStr {
-        return unsafe { CStr::from_ptr(self.props.properties.deviceName.as_ptr()) }
+    pub fn name(&self) -> &'_ CStr {
+        return unsafe { CStr::from_ptr(self.props.properties.deviceName.as_ptr()) };
     }
 
     #[inline]
-    pub fn ty (&self) -> Type {
+    pub fn ty(&self) -> Type {
         match self.props.properties.deviceType {
             vk::PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU => Type::IntegratedGpu,
             vk::PHYSICAL_DEVICE_TYPE_DISCRETE_GPU => Type::DiscreteGpu,
             vk::PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU => Type::VirtualGpu,
             vk::PHYSICAL_DEVICE_TYPE_CPU => Type::Cpu,
-            vk::PHYSICAL_DEVICE_TYPE_OTHER | _ => Type::Other
+            vk::PHYSICAL_DEVICE_TYPE_OTHER | _ => Type::Other,
         }
     }
 
     #[inline]
-    pub fn limits (&self) -> &vk::PhysicalDeviceLimits {
-        return &self.props.properties.limits
+    pub fn limits(&self) -> &vk::PhysicalDeviceLimits {
+        return &self.props.properties.limits;
     }
 
     // #[inline]
@@ -178,15 +203,15 @@ impl Properties {
     // }
 
     #[inline]
-    pub fn max_descriptors_per_set (&self) -> u32 {
-        return self.maintainence.maxPerSetDescriptors
+    pub fn max_descriptors_per_set(&self) -> u32 {
+        return self.maintainence.maxPerSetDescriptors;
     }
 
     #[inline]
-    pub fn max_allocation_size (&self) -> u64 {
-        return self.maintainence.maxMemoryAllocationSize
+    pub fn max_allocation_size(&self) -> u64 {
+        return self.maintainence.maxMemoryAllocationSize;
     }
- 
+
     // TODO other
 }
 
@@ -206,13 +231,13 @@ impl Debug for Properties {
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct Features {
-    inner: vk::PhysicalDeviceFeatures
+    inner: vk::PhysicalDeviceFeatures,
 }
 
 impl Features {
     #[inline]
-    pub fn into_raw (self) -> vk::PhysicalDeviceFeatures {
-        return self.inner
+    pub fn into_raw(self) -> vk::PhysicalDeviceFeatures {
+        return self.inner;
     }
 }
 
@@ -232,21 +257,21 @@ impl PartialEq for Family {
 
 impl Family {
     #[inline]
-    pub fn parent (self) -> PhysicalDevice {
-        return self.parent
+    pub fn parent(self) -> PhysicalDevice {
+        return self.parent;
     }
 
     #[inline]
-    pub fn idx (self) -> u32 {
-        return self.idx
+    pub fn idx(self) -> u32 {
+        return self.idx;
     }
 
     #[inline]
-    pub fn queue_flags (&self) -> FamilyQueueFlags {
+    pub fn queue_flags(&self) -> FamilyQueueFlags {
         #[cfg(debug_assertions)]
         return FamilyQueueFlags::from_bits(self.inner.queueFlags).unwrap();
         #[cfg(not(debug_assertions))]
-        return unsafe { FamilyQueueFlags::from_bits_unchecked(self.inner.queueFlags) }
+        return unsafe { FamilyQueueFlags::from_bits_unchecked(self.inner.queueFlags) };
     }
 }
 

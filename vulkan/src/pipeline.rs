@@ -146,9 +146,6 @@ impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
             basePipelineIndex: 0,
         };
 
-        println!("{:#?}, {:#?}, {:#?}, {:#?}", self.pipe_flags, shader.module(), self.entry, layout);
-        println!("{:#?}, {:#?}, {:#?}", self.device.id(), cache.as_ref().map_or(vk::NULL_HANDLE, PipelineCache::id), pipeline);
-
         match (entry.create_compute_pipelines)(
             self.device.id(),
             cache.as_ref().map_or(vk::NULL_HANDLE, PipelineCache::id),

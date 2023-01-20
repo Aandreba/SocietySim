@@ -1,5 +1,4 @@
-use core::simd::{SimdElement, Simd};
-use crate::{ExternBool, time::GameDuration};
+use crate::{ExternBool, time::GameDuration, simd::{f32x4, f32x2}};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(not(target_arch = "spirv"), derive(Debug, serde::Serialize, serde::Deserialize))]
@@ -10,15 +9,15 @@ pub struct PersonStats<T> {
     pub knowledge: T,
     pub finesse: T,
     pub gullability: T,
-    pub health: T
+    pub health: T,
 }
 
-impl<T> PersonStats<T> {
+impl PersonStats<f32> {
     #[inline]
-    pub fn as_simd (self) -> (Simd<T, 4>, Simd<T, 2>) where T: SimdElement {
+    pub fn to_simd (&self) -> (f32x4, f32x2) {
         return (
-            Simd::from_array([self.cordiality, self.intelligence, self.knowledge, self.finesse]),
-            Simd::from_array([self.gullability, self.health])
+            f32x4::from_array([self.cordiality, self.intelligence, self.knowledge, self.finesse]),
+            f32x2::from_array([self.gullability, self.health])
         )
     }
 }
@@ -28,6 +27,21 @@ impl<T> PersonStats<T> {
 #[repr(C)]
 pub struct Person {
     pub is_male: ExternBool,
-    pub age: GameDuration, // in weeks
-    pub stats: PersonStats<u8>
+    pub age: GameDuration,
+    pub stats: PersonStats<u8>,
+}
+
+impl Person {
+    // #[inline]
+    // pub fn affected_stats (&self, _traits: &[Trait]) -> PersonStats<u8> {
+    //     todo!()
+    // } 
+}
+
+#[derive(Clone, Copy, PartialEq, Default)]
+#[cfg_attr(not(target_arch = "spirv"), derive(Debug))]
+#[repr(C)]
+pub struct Trait {
+    pub weight: PersonStats<f32>,
+    pub offset: PersonStats<i8>
 }

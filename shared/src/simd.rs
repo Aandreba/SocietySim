@@ -1,4 +1,4 @@
-use core::ops::Mul;
+use core::ops::{Mul, BitXor, BitXorAssign, Add, AddAssign};
 #[cfg(target_arch = "spirv")]
 use core::arch::asm;
 
@@ -309,5 +309,219 @@ cfg_if::cfg_if! {
                 return Self { inner: self.inner * rhs.inner }
             }
         }
+    }
+}
+
+/* UNSIGNED INTEGER */
+#[derive(Clone, Copy, Default)]
+#[allow(non_camel_case_types)]
+pub struct u32x4 {
+    #[cfg(not(target_arch = "spirv"))]
+    inner: core::simd::u32x4,
+    #[cfg(target_arch = "spirv")]
+    inner: spirv_std::glam::UVec4
+}
+
+impl u32x4 {
+    #[inline]
+    pub const fn from_array (inner: [u32; 4]) -> Self {
+        #[cfg(not(target_arch = "spirv"))]
+        return Self { inner: core::simd::u32x4::from_array(inner) };
+        #[cfg(target_arch = "spirv")]
+        return Self { inner: spirv_std::glam::UVec4::from_array(inner) };
+    }
+
+    cfg_if::cfg_if! {
+        if #[cfg(target_arch = "spirv")] {
+            #[inline]
+            pub fn x (self) -> u32 {
+                return self.inner.x
+            }
+
+            #[inline]
+            pub fn y (self) -> u32 {
+                return self.inner.y
+            }
+
+            #[inline]
+            pub fn z (self) -> u32 {
+                return self.inner.z
+            }
+
+            #[inline]
+            pub fn w (self) -> u32 {
+                return self.inner.w
+            }
+
+            #[inline]
+            pub fn x_mut (&mut self) -> &mut u32 {
+                return &mut self.inner.x
+            }
+
+            #[inline]
+            pub fn y_mut (&mut self) -> &mut u32 {
+                return &mut self.inner.y
+            }
+
+            #[inline]
+            pub fn z_mut (&mut self) -> &mut u32 {
+                return &mut self.inner.z
+            }
+
+            #[inline]
+            pub fn w_mut (&mut self) -> &mut u32 {
+                return &mut self.inner.w
+            }
+        } else {
+            #[inline]
+            pub fn x (self) -> u32 {
+                return self.inner[0]
+            }
+
+            #[inline]
+            pub fn y (self) -> u32 {
+                return self.inner[1]
+            }
+
+            #[inline]
+            pub fn z (self) -> u32 {
+                return self.inner[2]
+            }
+
+            #[inline]
+            pub fn w (self) -> u32 {
+                return self.inner[3]
+            }
+
+            #[inline]
+            pub fn x_mut (&mut self) -> &mut u32 {
+                return &mut self.inner[0]
+            }
+
+            #[inline]
+            pub fn y_mut (&mut self) -> &mut u32 {
+                return &mut self.inner[1]
+            }
+
+            #[inline]
+            pub fn z_mut (&mut self) -> &mut u32 {
+                return &mut self.inner[2]
+            }
+
+            #[inline]
+            pub fn w_mut (&mut self) -> &mut u32 {
+                return &mut self.inner[4]
+            }
+        }
+    }
+
+    #[inline]
+    pub fn dot (self, rhs: Self) -> u32 {
+        return (self * rhs).reduce_sum()
+    }
+
+    pub fn reduce_sum (self) -> u32 {
+        #[cfg(not(target_arch = "spirv"))]
+        return core::simd::SimdUint::reduce_sum(self.inner);
+        #[cfg(target_arch = "spirv")]
+        return self.inner.x + self.inner.y + self.inner.z + self.inner.w
+    }
+}
+
+impl Add for u32x4 {
+    type Output = u32x4;
+
+    #[cfg(target_arch = "spirv")]
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        unsafe {
+            let mut inner = spirv_std::glam::UVec4::default();
+            asm! {
+                "%lhs = OpLoad _ {lhs}",
+                "%rhs = OpLoad _ {rhs}",
+                "%result = OpIAdd typeof{result} %lhs %rhs",
+                "OpStore {result} %result",
+                lhs = in(reg) &self.inner,
+                rhs = in(reg) &rhs.inner,
+                result = in(reg) &mut inner
+            }
+            return Self { inner }
+        }
+    }
+
+    #[cfg(not(target_arch = "spirv"))]
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        return Self { inner: self.inner + rhs.inner }
+    }
+}
+
+impl AddAssign for u32x4 {
+    #[inline]
+    fn add_assign (&mut self, rhs: Self) {
+        *self = *self + rhs
+    }
+}
+
+impl Mul for u32x4 {
+    type Output = u32x4;
+
+    #[cfg(target_arch = "spirv")]
+    #[inline]
+    fn mul(self, rhs: Self) -> Self::Output {
+        unsafe {
+            let mut inner = spirv_std::glam::UVec4::default();
+            asm! {
+                "%lhs = OpLoad _ {lhs}",
+                "%rhs = OpLoad _ {rhs}",
+                "%result = OpIMul typeof{result} %lhs %rhs",
+                "OpStore {result} %result",
+                lhs = in(reg) &self.inner,
+                rhs = in(reg) &rhs.inner,
+                result = in(reg) &mut inner
+            }
+            return Self { inner }
+        }
+    }
+
+    #[cfg(not(target_arch = "spirv"))]
+    #[inline]
+    fn mul(self, rhs: Self) -> Self::Output {
+        return Self { inner: self.inner * rhs.inner }
+    }
+}
+
+impl BitXor for u32x4 {
+    type Output = u32x4;
+
+    #[cfg(target_arch = "spirv")]
+    #[inline]
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        unsafe {
+            let mut inner = spirv_std::glam::UVec4::default();
+            asm! {
+                "%lhs = OpLoad _ {lhs}",
+                "%rhs = OpLoad _ {rhs}",
+                "%result = OpBitwiseXor typeof{result} %lhs %rhs",
+                "OpStore {result} %result",
+                lhs = in(reg) &self.inner,
+                rhs = in(reg) &rhs.inner,
+                result = in(reg) &mut inner
+            }
+            return Self { inner }
+        }
+    }
+
+    #[cfg(not(target_arch = "spirv"))]
+    #[inline]
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        return Self { inner: self.inner ^ rhs.inner }
+    }
+}
+
+impl BitXorAssign for u32x4 {
+    #[inline]
+    fn bitxor_assign (&mut self, rhs: Self) {
+        *self = *self ^ rhs
     }
 }

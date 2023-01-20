@@ -11,6 +11,7 @@ use crate::{
 #[derive(Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct PersonalEvent {
+    #[cfg_attr(not(target_arch = "spirv"), serde(default))]
     pub duration: Option<GameDuration>,
     pub chance: PersonStats<f32>,
     pub effects: PersonStats<i8>,
