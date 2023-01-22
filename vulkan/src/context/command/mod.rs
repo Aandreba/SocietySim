@@ -31,7 +31,7 @@ pub struct Command<'a> {
 }
 
 impl<'a> Command<'a> {
-    pub(crate) fn new (family: &'a QueueFamily, pool_buffer: MutexGuard<'a, (NonZeroU64, NonZeroU64)>) -> Result<Self> {
+    pub(crate) fn new (family: &'a QueueFamily, pool_buffer: MutexGuard<'a, [NonZeroU64; 2]>) -> Result<Self> {
         let info = vk::CommandBufferBeginInfo {
             sType: vk::STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             pNext: core::ptr::null(),

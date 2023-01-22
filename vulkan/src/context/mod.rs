@@ -2,7 +2,7 @@ use crate::{
     device::Device,
     physical_dev::{PhysicalDevice, QueueFlags},
     utils::usize_to_u32,
-    Entry, Result,
+    Entry, Result, error::Error,
 };
 use std::{
     num::NonZeroU64,
@@ -15,12 +15,14 @@ pub trait ContextRef = Deref<Target = Context>;
 pub mod command;
 
 // https://stackoverflow.com/a/55273688
+#[derive(Debug)]
 struct QueueFamily {
     flags: QueueFlags,
     queues: Vec<Mutex<NonZeroU64>>,
     pool_buffer: Mutex<[NonZeroU64; 2]>,
 }
 
+#[derive(Debug)]
 pub struct Context {
     device: Device,
     families: Box<[QueueFamily]>,
@@ -28,21 +30,13 @@ pub struct Context {
 
 impl Context {
     #[inline]
-    pub fn new(phy: PhysicalDevice, queues: usize) -> Result<Self> {
-        let priorities = vec![1f32; queues];
-        Self::with_priorities(phy, &priorities)
-    }
-
-    #[inline]
-    pub fn with_priorities(phy: PhysicalDevice, priorities: &[f32]) -> Result<Self> {
-        debug_assert!(priorities.iter().all(|x| (0f32..=1f32).contains(x)));
-
+    pub fn new(phy: PhysicalDevice) -> Result<Self> {
         let family_props = phy.queue_families_raw();
         let mut device = Device::builder(phy);
 
         let mut priorities = Vec::new();
         for props in family_props.iter() {
-            if let Some(delta) = props.queueCount.checked_sub(priorities.len()) {
+            if let Some(delta) = (props.queueCount as usize).checked_sub(priorities.len()) {
                 priorities.reserve(delta);
                 for _ in 0..delta {
                     priorities.push(1f32)
@@ -50,17 +44,19 @@ impl Context {
             }
         }
 
-        for (i, props) in family_props.iter().enumerate() {
+        for (props, i) in family_props.iter().zip(0u32..) {
             device = device
                 .queues(&priorities[..(props.queueCount as usize)])
-                .family_index(i)
+                .family_index(i)?
                 .build();
         }
 
+        let device = device.build()?;
         let mut families = Vec::with_capacity(family_props.len());
-        for i in 0..family_props.len() {
-            let family = &family_props[i];
-            let pool = Self::create_command_pool(&device, usize_to_u32(i))?;
+        
+        for i in 0..usize_to_u32(family_props.len()) {
+            let family = &family_props[i as usize];
+            let pool = Self::create_command_pool(&device, i)?;
             let buffer = Self::create_command_buffer(&device, pool)?;
             let queues = (0..family.queueCount)
                 .into_iter()
@@ -70,11 +66,11 @@ impl Context {
                     return NonZeroU64::new(result).map(Mutex::new);
                 })
                 .try_collect::<Vec<_>>()
-                .ok_or(vk::ERROR_UNKNOWN.into())?;
+                .ok_or::<Error>(vk::ERROR_UNKNOWN.into())?;
 
             families.push(QueueFamily {
                 flags: QueueFlags::from_bits_truncate(family.queueFlags),
-                pool_buffer: Mutex::new((pool, buffer)),
+                pool_buffer: Mutex::new([pool, buffer]),
                 queues,
             });
         }
@@ -132,13 +128,13 @@ impl Context {
     }
 
     #[inline]
-    fn command(&self, flags: QueueFlags) -> Command<'_> {
-        let pool = 'outer: loop {
-            for queue in self.families.iter() {
-                if queue.flags.contains(flags) {
-                    match queue.pool_buffer.try_lock() {
-                        Ok(x) => break 'outer x,
-                        Err(TryLockError::Poisoned(e)) => break 'outer e.into_inner(),
+    fn command(&self, flags: QueueFlags) -> Result<Command<'_>> {
+        let (pool, family) = 'outer: loop {
+            for family in self.families.iter() {
+                if family.flags.contains(flags) {
+                    match family.pool_buffer.try_lock() {
+                        Ok(x) => break 'outer (x, family),
+                        Err(TryLockError::Poisoned(e)) => break 'outer (e.into_inner(), family),
                         Err(_) => {}
                     }
                 }
@@ -146,6 +142,6 @@ impl Context {
             std::thread::yield_now();
         };
 
-        return Command::new(self, pool);
+        return Command::new(family, pool);
     }
 }

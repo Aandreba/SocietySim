@@ -368,6 +368,14 @@ bitflags::bitflags! {
     }
 }
 
+#[repr(i32)]
+pub enum PipelineBindPoint {
+    Graphics = vk::PIPELINE_BIND_POINT_GRAPHICS,
+    Compute = vk::PIPELINE_BIND_POINT_COMPUTE,
+    RayTracing = vk::PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+    SubpassShadingHuawei = vk::PIPELINE_BIND_POINT_SUBPASS_SHADING_HUAWEI,
+}
+
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct PipelineCache<D: ContextRef> {
     inner: NonZeroU64,

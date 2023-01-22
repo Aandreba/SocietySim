@@ -19,10 +19,10 @@ impl<'a, 'b> TransferCommand<'a, 'b> {
     }
 
     #[inline]
-    pub fn buffer_copy<T: Copy>(
+    pub fn buffer_copy<T: Copy, S: DeviceAllocator, D: DeviceAllocator>(
         mut self,
-        src: &'b Buffer<T>,
-        dst: &'b mut Buffer<T>,
+        src: &'b Buffer<T, S>,
+        dst: &'b mut Buffer<T, D>,
         regions: impl IntoIterator<Item = BufferCopyRegion<impl RangeBounds<vk::DeviceSize>, T>>,
     ) -> Self {
         let regions = regions.into_iter().map(|x| x.into_buffer_copy(dst)).collect::<Vec<_>>();

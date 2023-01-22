@@ -1,69 +1,91 @@
-use std::{ffi::c_void, ops::{Bound, RangeBounds}, sync::MutexGuard, num::NonZeroU64};
-use crate::{Entry, shader::ShaderStages, Result, utils::usize_to_u32, descriptor::DescriptorSet, pool::PipelineBindPoint, pipeline::Pipeline, context::QueueFamily};
 use super::{Command, CommandResult};
+use crate::{
+    context::{ContextRef, QueueFamily},
+    descriptor::DescriptorSet,
+    pipeline::{Pipeline, PipelineBindPoint},
+    shader::ShaderStages,
+    utils::usize_to_u32,
+    Entry, Result,
+};
+use std::{
+    ffi::c_void,
+    num::NonZeroU64,
+    ops::{Bound, Index, RangeBounds},
+    sync::MutexGuard,
+};
 
-pub struct ComputeCommand<'a> (Command<'a>);
+pub struct ComputeCommand<'a, 'b, C: ContextRef> {
+    cmd: Command<'a>,
+    pipeline: &'b Pipeline<C>,
+}
 
-impl<'a> ComputeCommand<'a> {
+impl<'a, 'b, C: ContextRef> ComputeCommand<'a, 'b, C> {
     #[inline]
-    pub(crate) fn new(family: &'a QueueFamily, pool_buffer: MutexGuard<'a, [NonZeroU64; 2]>) -> Result<Self> {
-        Command::new(family, pool_buffer).map(Self)
-    }
+    pub(crate) fn new<R: RangeBounds<usize>>(
+        family: &'a QueueFamily,
+        pool_buffer: MutexGuard<'a, [NonZeroU64; 2]>,
+        point: PipelineBindPoint,
+        pipeline: &'b Pipeline<C>,
+        desc_sets: R,
+    ) -> Result<Self>
+    where
+        [DescriptorSet]: Index<R, Output = [DescriptorSet]>,
+    {
+        let cmd = Command::new(family, pool_buffer)?;
 
-    #[inline]
-    pub fn push_contant<T: Copy> (&mut self, value: &T, stages: ShaderStages) -> CommandResult<'a, ()> {
-        let pipeline = self.pipeline.ok_or(vk::ERROR_NOT_PERMITTED_KHR)?;
-        (Entry::get().cmd_push_constants)(
-            self.id(),
-            pipeline.layout(),
-            stages.bits(),
-            0,
-            usize_to_u32(core::mem::size_of::<T>()),
-            value as *const T as *const c_void
-        );
-        return Ok(())
-    }
-
-    #[inline]
-    pub fn bind_pipeline<R: RangeBounds<usize>> (&mut self, point: PipelineBindPoint, pipeline: &'a Pipeline<P>, desc_sets: R) where [DescriptorSet]: Index<R, Output = [DescriptorSet]> {
-        (Entry::get().cmd_bind_pipeline)(
-            self.id(),
-            point as i32,
-            pipeline.id()
-        );
+        (Entry::get().cmd_bind_pipeline)(cmd.buffer(), point as i32, pipeline.id());
 
         let first_set = match desc_sets.start_bound() {
             Bound::Excluded(x) => usize_to_u32(*x + 1),
             Bound::Included(x) => usize_to_u32(*x),
-            Bound::Unbounded => 0
+            Bound::Unbounded => 0,
         };
 
         let descriptor_set_count = usize_to_u32(match desc_sets.end_bound() {
             Bound::Excluded(x) => *x,
             Bound::Included(x) => *x + 1,
-            Bound::Unbounded => pipeline.sets().len()
+            Bound::Unbounded => pipeline.sets().len(),
         }) - first_set;
 
         let descriptor_sets: &[DescriptorSet] = &pipeline.sets().deref()[desc_sets];
 
         (Entry::get().cmd_bind_descriptor_sets)(
-            self.id(),
+            cmd.buffer(),
             point as i32,
             pipeline.layout(),
             first_set,
             descriptor_set_count,
             descriptor_sets.as_ptr().cast(),
             0,
-            core::ptr::null()
+            core::ptr::null(),
         );
-        self.pipeline = Some(pipeline);
+
+        return Ok(Self {
+            cmd,
+            pipeline
+        })
     }
 
     #[inline]
-    pub fn dispatch (self, x: u32, y: u32, z: u32) {
-        (Entry::get().cmd_dispatch)(
+    pub fn push_contant<T: Copy>(
+        &mut self,
+        value: &T,
+        stages: ShaderStages,
+    ) -> CommandResult<'a, ()> {
+        (Entry::get().cmd_push_constants)(
             self.id(),
-            x, y, z
+            self.pipeline.layout(),
+            stages.bits(),
+            0,
+            usize_to_u32(core::mem::size_of::<T>()),
+            value as *const T as *const c_void,
         );
+        return Ok(());
+    }
+
+    #[inline]
+    pub fn execute (self, x: u32, y: u32, z: u32) {
+        (Entry::get().cmd_dispatch)(self.id(), x, y, z);
+        self.cmd.submit();
     }
 }

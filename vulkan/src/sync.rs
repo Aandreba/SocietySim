@@ -11,11 +11,11 @@ use std::{
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Fence<C: ContextRef> {
     inner: NonZeroU64,
-    parent: C,
+    context: C,
 }
 
 impl<C: ContextRef> Fence<C> {
-    pub fn new(parent: C, flags: FenceFlags) -> Result<Self> {
+    pub fn new(context: C, flags: FenceFlags) -> Result<Self> {
         let info = vk::FenceCreateInfo {
             sType: vk::STRUCTURE_TYPE_FENCE_CREATE_INFO,
             pNext: core::ptr::null(),
@@ -25,7 +25,7 @@ impl<C: ContextRef> Fence<C> {
         let mut result = 0;
         tri! {
             (Entry::get().create_fence)(
-                parent.id(),
+                context.device().id(),
                 addr_of!(info),
                 core::ptr::null(),
                 addr_of_mut!(result)
@@ -33,7 +33,7 @@ impl<C: ContextRef> Fence<C> {
         }
 
         if let Some(inner) = NonZeroU64::new(result) {
-            return Ok(Self { inner, parent });
+            return Ok(Self { inner, context });
         }
         return Err(vk::ERROR_UNKNOWN.into());
     }
@@ -45,7 +45,7 @@ impl<C: ContextRef> Fence<C> {
 
     #[inline]
     pub fn device(&self) -> &Device {
-        return &self.parent;
+        return self.context.device();
     }
 
     #[inline]
@@ -94,25 +94,49 @@ impl<C: ContextRef> Fence<C> {
 
     #[inline]
     pub fn wait(&self, timeout: Option<Duration>) -> Result<bool> {
-        let timeout = match timeout {
-            #[cfg(debug_assertions)]
-            Some(x) => u64::try_from(x.as_nanos()).unwrap(),
-            #[cfg(not(debug_assertions))]
-            Some(x) => x.as_nanos() as u64,
-            None => u64::MAX,
-        };
+        #[inline]
+        fn wait_for_fences (this: &NonZeroU64, device: &Device, nanos: u64) -> vk::Result {
+            return (Entry::get().wait_for_fences)(
+                device.id(),
+                1,
+                (this as *const NonZeroU64).cast::<u64>(),
+                vk::TRUE,
+                nanos,
+            );
+        }
 
-        return match (Entry::get().wait_for_fences)(
-            self.parent.id(),
-            1,
-            addr_of!(self.inner).cast(),
-            vk::TRUE,
-            timeout,
-        ) {
-            vk::SUCCESS => Ok(true),
-            vk::TIMEOUT => Ok(false),
-            e => Err(e.into()),
-        };
+        if let Some(timeout) = timeout {
+            const LIMIT: u128 = u64::MAX as u128;
+
+            let nanos = timeout.as_nanos();
+            let div = nanos / LIMIT;
+            let rem = (nanos % LIMIT) as u64; // [0, u64::MAX)
+
+            for _ in 0..div {
+                match wait_for_fences(&self.inner, self.device(), rem) {
+                    vk::SUCCESS => return Ok(true),
+                    vk::TIMEOUT => {},
+                    e => return Err(e.into()),
+                }
+            }
+
+            if rem > 0 {
+                return match wait_for_fences(&self.inner, self.device(), rem) {
+                    vk::SUCCESS => Ok(true),
+                    vk::TIMEOUT => Ok(false),
+                    e => Err(e.into()),
+                }
+            }
+            return Ok(false)
+        } else {
+            loop {
+                match wait_for_fences(&self.inner, self.device(), u64::MAX) {
+                    vk::SUCCESS => return Ok(true),
+                    vk::TIMEOUT => {},
+                    e => return Err(e.into()),
+                }
+            }
+        }
     }
 
     // #[inline]
