@@ -1,5 +1,5 @@
 use std::{sync::{MutexGuard, TryLockError}, num::NonZeroU64, ptr::addr_of};
-use crate::{Entry, Result, error::Error, utils::usize_to_u32};
+use crate::{Entry, Result, error::Error};
 use super::QueueFamily;
 
 flat_mod! { compute, transfer }
@@ -40,7 +40,7 @@ impl<'a> Command<'a> {
         };
 
         tri! {
-            (Entry::get().begin_command_buffer)(pool_buffer.1.get(), addr_of!(info))
+            (Entry::get().begin_command_buffer)(pool_buffer[1].get(), addr_of!(info))
         }
 
         return Ok(Self { pool_buffer, family })
@@ -57,9 +57,9 @@ impl<'a> Command<'a> {
     }
 
     #[inline]
-    pub fn submit (mut self) {
+    pub fn submit (self) -> Result<()> {
         let family = self.family;
-        let pool = self.pool();
+        //let pool = self.pool();
         let buffer = self.buffer();
         drop(self);
         
@@ -68,7 +68,7 @@ impl<'a> Command<'a> {
             pNext: core::ptr::null(),
             waitSemaphoreCount: 0, // todo
             pWaitSemaphores: core::ptr::null(), // todo
-            pWaitDstStageMask: 0, // todo
+            pWaitDstStageMask: core::ptr::null(), // todo
             commandBufferCount: 1,
             pCommandBuffers: addr_of!(buffer),
             signalSemaphoreCount: 0, // todo
@@ -94,6 +94,8 @@ impl<'a> Command<'a> {
                 vk::NULL_HANDLE // todo
             )
         }
+
+        return Ok(())
     }
 }
 

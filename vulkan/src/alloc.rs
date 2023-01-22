@@ -1,9 +1,11 @@
 use crate::{
-    device::{Device},
+    context::{Context, ContextRef},
+    device::Device,
     error::Error,
     utils::{u64_to_usize, UpQueue},
     Entry, Result,
 };
+use once_cell::sync::OnceCell;
 use std::{
     ffi::c_void,
     fmt::Debug,
@@ -19,8 +21,7 @@ use std::{
         Arc, Mutex, TryLockError,
     },
 };
-use once_cell::sync::OnceCell;
-use vk::{MemoryType, DeviceSize};
+use vk::{DeviceSize, MemoryType};
 
 const UNINIT: *mut c_void = core::ptr::null_mut();
 const INITIALIZING: *mut c_void = NonNull::dangling().as_ptr();
@@ -64,13 +65,13 @@ impl<M: MemoryMetadata> MemoryPtr<M> {
 }
 
 pub unsafe trait DeviceAllocator {
-    type Device: Deref<Target = Device>;
+    type Context: ContextRef;
     type Metadata: MemoryMetadata;
 
-    fn owned_device(&self) -> Self::Device
+    fn owned_context(&self) -> Self::Context
     where
-        Self::Device: Clone;
-    fn device(&self) -> &Device;
+        Self::Context: Clone;
+    fn context(&self) -> &Context;
 
     fn allocate(
         &self,
@@ -91,23 +92,28 @@ pub unsafe trait DeviceAllocator {
     /// # Safety
     /// It is up to the caller to ensure that Rust's [borrowing rules](https://doc.rust-lang.org/stable/book/ch04-02-references-and-borrowing.html) are followed for the maps.
     unsafe fn unmap(&self, mem: &MemoryPtr<Self::Metadata>);
-}
-
-unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for &T {
-    type Device = T::Device;
-    type Metadata = T::Metadata;
-
-    #[inline]
-    fn owned_device(&self) -> Self::Device
-    where
-        Self::Device: Clone,
-    {
-        return T::owned_device(*self);
-    }
 
     #[inline]
     fn device(&self) -> &Device {
-        return T::device(*self);
+        return self.context().device();
+    }
+}
+
+unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for &T {
+    type Context = T::Context;
+    type Metadata = T::Metadata;
+
+    #[inline]
+    fn owned_context(&self) -> Self::Context
+    where
+        Self::Context: Clone,
+    {
+        return T::owned_context(*self)
+    }
+
+    #[inline]
+    fn context(&self) -> &Context {
+        return T::context(*self);
     }
 
     #[inline]
@@ -141,20 +147,20 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for &T {
 }
 
 unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Box<T> {
-    type Device = T::Device;
+    type Context = T::Context;
     type Metadata = T::Metadata;
 
     #[inline]
-    fn owned_device(&self) -> Self::Device
+    fn owned_context(&self) -> Self::Context
     where
-        Self::Device: Clone,
+        Self::Context: Clone,
     {
-        return T::owned_device(self);
+        return T::owned_context(self)
     }
 
     #[inline]
-    fn device(&self) -> &Device {
-        return T::device(self);
+    fn context(&self) -> &Context {
+        return T::context(self);
     }
 
     #[inline]
@@ -188,20 +194,20 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Box<T> {
 }
 
 unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Rc<T> {
-    type Device = T::Device;
+    type Context = T::Context;
     type Metadata = T::Metadata;
 
     #[inline]
-    fn owned_device(&self) -> Self::Device
+    fn owned_context(&self) -> Self::Context
     where
-        Self::Device: Clone,
+        Self::Context: Clone,
     {
-        return T::owned_device(self);
+        return T::owned_context(self)
     }
 
     #[inline]
-    fn device(&self) -> &Device {
-        return T::device(self);
+    fn context(&self) -> &Context {
+        return T::context(self);
     }
 
     #[inline]
@@ -235,20 +241,20 @@ unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Rc<T> {
 }
 
 unsafe impl<T: ?Sized + DeviceAllocator> DeviceAllocator for Arc<T> {
-    type Device = T::Device;
+    type Context = T::Context;
     type Metadata = T::Metadata;
 
     #[inline]
-    fn owned_device(&self) -> Self::Device
+    fn owned_context(&self) -> Self::Context
     where
-        Self::Device: Clone,
+        Self::Context: Clone,
     {
-        return T::owned_device(self);
+        return T::owned_context(self)
     }
 
     #[inline]
-    fn device(&self) -> &Device {
-        return T::device(self);
+    fn context(&self) -> &Context {
+        return T::context(self);
     }
 
     #[inline]
@@ -285,20 +291,20 @@ unsafe impl<T: Deref> DeviceAllocator for Pin<T>
 where
     T::Target: DeviceAllocator,
 {
-    type Device = <T::Target as DeviceAllocator>::Device;
+    type Context = <T::Target as DeviceAllocator>::Context;
     type Metadata = <T::Target as DeviceAllocator>::Metadata;
 
     #[inline]
-    fn owned_device(&self) -> Self::Device
+    fn owned_context(&self) -> Self::Context
     where
-        Self::Device: Clone,
+        Self::Context: Clone,
     {
-        return <T::Target as DeviceAllocator>::owned_device(self);
+        return <T::Target as DeviceAllocator>::owned_context(self);
     }
 
     #[inline]
-    fn device(&self) -> &Device {
-        return <T::Target as DeviceAllocator>::device(self);
+    fn context(&self) -> &Context {
+        return <T::Target as DeviceAllocator>::context(self);
     }
 
     #[inline]
@@ -332,23 +338,23 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct RawInner<D>(pub D);
+pub(crate) struct RawInner<C>(pub C);
 
-unsafe impl<D: Deref<Target = Device>> DeviceAllocator for RawInner<D> {
-    type Device = D;
+unsafe impl<C: ContextRef> DeviceAllocator for RawInner<C> {
+    type Context = C;
     type Metadata = RawInfo;
 
     #[inline]
-    fn owned_device(&self) -> Self::Device
+    fn owned_context(&self) -> Self::Context
     where
-        Self::Device: Clone,
+        Self::Context: Clone,
     {
-        return self.0.clone();
+        return self.0.clone()
     }
 
     #[inline]
-    fn device(&self) -> &Device {
-        return self.0.deref();
+    fn context(&self) -> &Context {
+        return &self.0
     }
 
     fn allocate<'a>(
@@ -360,7 +366,7 @@ unsafe impl<D: Deref<Target = Device>> DeviceAllocator for RawInner<D> {
         let entry = Entry::get();
 
         let mut props = MaybeUninit::uninit();
-        (entry.get_physical_device_memory_properties)(self.0.physical().id(), props.as_mut_ptr());
+        (entry.get_physical_device_memory_properties)(self.device().physical().id(), props.as_mut_ptr());
         let props = unsafe { props.assume_init() };
 
         let mut info = None;
@@ -385,7 +391,7 @@ unsafe impl<D: Deref<Target = Device>> DeviceAllocator for RawInner<D> {
 
             let mut memory = 0;
             match (entry.allocate_memory)(
-                self.0.id(),
+                self.device().id(),
                 addr_of!(info),
                 core::ptr::null(),
                 addr_of_mut!(memory),
@@ -463,18 +469,18 @@ unsafe impl<D: Deref<Target = Device>> DeviceAllocator for RawInner<D> {
 }
 
 #[derive(Debug)]
-pub struct Page<D: Deref<Target = Device>> {
+pub struct Page<C: ContextRef> {
     inner: ManuallyDrop<MemoryPtr<RawInfo>>,
     flags: MemoryFlags,
     ranges: Mutex<Vec<Range<vk::DeviceSize>>>,
     mapped_ptr: AtomicPtr<c_void>,
-    alloc: RawInner<D>,
+    alloc: RawInner<C>,
 }
 
-impl<D: Deref<Target = Device>> Page<D> {
+impl<C: ContextRef> Page<C> {
     #[inline]
-    pub fn new(device: D, size: vk::DeviceSize, flags: MemoryFlags) -> Result<Self> {
-        let raw = RawInner(device);
+    pub fn new(context: C, size: vk::DeviceSize, flags: MemoryFlags) -> Result<Self> {
+        let raw = RawInner(context);
         let inner = raw.allocate(size, 1, flags)?;
         return Ok(Self {
             inner: ManuallyDrop::new(inner),
@@ -519,9 +525,7 @@ impl<D: Deref<Target = Device>> Page<D> {
 
         return match self.ranges.get_mut() {
             Ok(ranges) => Self::inner_allocate(&self.inner, ranges, size, align),
-            Err(e) => {
-                Self::inner_allocate(&self.inner, e.into_inner(), size, align)
-            }
+            Err(e) => Self::inner_allocate(&self.inner, e.into_inner(), size, align),
         };
     }
 
@@ -549,12 +553,7 @@ impl<D: Deref<Target = Device>> Page<D> {
                 let end = range.start + size;
 
                 range.start = end;
-                return unsafe {
-                    Ok(MemoryPtr::new(
-                        inner.inner,
-                        PageInfo { range: start..end },
-                    ))
-                };
+                return unsafe { Ok(MemoryPtr::new(inner.inner, PageInfo { range: start..end })) };
             } else {
                 let start = range.start + padding;
                 let end = start + size;
@@ -562,12 +561,7 @@ impl<D: Deref<Target = Device>> Page<D> {
                 let prev_end = core::mem::replace(&mut range.end, padding);
                 ranges.push(end..prev_end);
 
-                return unsafe {
-                    Ok(MemoryPtr::new(
-                        inner.inner,
-                        PageInfo { range: start..end },
-                    ))
-                };
+                return unsafe { Ok(MemoryPtr::new(inner.inner, PageInfo { range: start..end })) };
             }
         } else {
             return Err(vk::ERROR_OUT_OF_DEVICE_MEMORY.into());
@@ -575,21 +569,21 @@ impl<D: Deref<Target = Device>> Page<D> {
     }
 }
 
-unsafe impl<D: Deref<Target = Device>> DeviceAllocator for Page<D> {
-    type Device = D;
+unsafe impl<C: ContextRef> DeviceAllocator for Page<C> {
+    type Context = C;
     type Metadata = PageInfo;
 
     #[inline]
-    fn owned_device(&self) -> Self::Device
+    fn owned_context(&self) -> Self::Context
     where
-        Self::Device: Clone,
+        Self::Context: Clone,
     {
-        return self.alloc.owned_device();
+        return self.alloc.owned_context();
     }
 
     #[inline]
-    fn device(&self) -> &Device {
-        return self.alloc.device();
+    fn context(&self) -> &Context {
+        return self.alloc.context();
     }
 
     #[inline]
@@ -711,7 +705,7 @@ unsafe impl<D: Deref<Target = Device>> DeviceAllocator for Page<D> {
     }
 }
 
-impl<D: Deref<Target = Device>> Drop for Page<D> {
+impl<D: ContextRef> Drop for Page<D> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
@@ -725,10 +719,10 @@ impl<D: Deref<Target = Device>> Drop for Page<D> {
 }
 
 #[repr(transparent)]
-struct StandardDevice(*const Device);
+struct StandardContext(*const Context);
 
-impl Deref for StandardDevice {
-    type Target = Device;
+impl Deref for StandardContext {
+    type Target = Context;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -736,47 +730,44 @@ impl Deref for StandardDevice {
     }
 }
 
-unsafe impl Send for StandardDevice where for<'a> &'a Device: Send {}
-unsafe impl Sync for StandardDevice where for<'a> &'a Device: Sync {}
+unsafe impl Send for StandardContext where for<'a> &'a Context: Send {}
+unsafe impl Sync for StandardContext where for<'a> &'a Context: Sync {}
 
-pub struct Book<D: Deref<Target = Device>> {
-    pages: UpQueue<once_cell::sync::OnceCell<Page<StandardDevice>>>,
-    device: Pin<D>,
-    range: Range<DeviceSize>
+pub struct Book<C: ContextRef> {
+    pages: UpQueue<once_cell::sync::OnceCell<Page<StandardContext>>>,
+    context: Pin<C>,
+    range: Range<DeviceSize>,
 }
 
-impl<D: Deref<Target = Device>> Book<D> {
+impl<C: ContextRef> Book<C> {
     #[inline]
-    pub fn new(device: D, min_size: Option<NonZeroU64>, max_pages: Option<NonZeroUsize>) -> Self
+    pub fn new(context: C, min_size: Option<NonZeroU64>, max_pages: Option<NonZeroUsize>) -> Self
     where
-        D: Unpin,
+        C: Unpin,
     {
-        Self::new_pinned(Pin::new(device), min_size, max_pages)
+        Self::new_pinned(Pin::new(context), min_size, max_pages)
     }
 
     #[inline]
     pub unsafe fn new_unchecked(
-        device: D,
+        context: C,
         min_size: Option<NonZeroU64>,
         max_pages: Option<NonZeroUsize>,
     ) -> Self {
-        Self::new_pinned(Pin::new_unchecked(device), min_size, max_pages)
+        Self::new_pinned(Pin::new_unchecked(context), min_size, max_pages)
     }
 
     #[inline]
     pub fn new_pinned(
-        device: Pin<D>,
+        context: Pin<C>,
         min_size: Option<NonZeroU64>,
         max_pages: Option<NonZeroUsize>,
     ) -> Self {
-        let props = once_cell::unsync::Lazy::new(|| device.physical().properties());
+        let props = once_cell::unsync::Lazy::new(|| context.device().physical().properties());
 
         let max_pages = match max_pages {
             Some(x) => x.get(),
-            None => usize::max(
-                1,
-                props.limits().maxMemoryAllocationCount as usize,
-            )
+            None => usize::max(1, props.limits().maxMemoryAllocationCount as usize),
         };
 
         let max_size = u64::max(1, props.max_allocation_size() / (max_pages as u64));
@@ -787,27 +778,27 @@ impl<D: Deref<Target = Device>> Book<D> {
 
         return Self {
             pages: UpQueue::new(max_pages),
-            device,
-            range: min_size..max_size
+            range: min_size..max_size,
+            context,
         };
     }
 }
 
-unsafe impl<D: Deref<Target = Device>> DeviceAllocator for Book<D> {
-    type Device = Pin<D>;
+unsafe impl<C: ContextRef> DeviceAllocator for Book<C> {
+    type Context = Pin<C>;
     type Metadata = BookInfo;
 
     #[inline]
-    fn owned_device(&self) -> Self::Device
+    fn owned_context(&self) -> Self::Context
     where
-        Self::Device: Clone,
+        Self::Context: Clone,
     {
-        return self.device.clone();
+        return self.context.clone();
     }
 
     #[inline]
-    fn device(&self) -> &Device {
-        return &self.device;
+    fn context(&self) -> &Context {
+        return &self.context;
     }
 
     fn allocate(
@@ -818,13 +809,18 @@ unsafe impl<D: Deref<Target = Device>> DeviceAllocator for Book<D> {
     ) -> Result<MemoryPtr<Self::Metadata>> {
         if size > self.range.end {
             #[cfg(debug_assertions)]
-            eprintln!("Tried to allocate too much memory: {} bytes of a maximum of {}", size, self.range.end);
-            return Err(vk::ERROR_OUT_OF_DEVICE_MEMORY.into())
+            eprintln!(
+                "Tried to allocate too much memory: {} bytes of a maximum of {}",
+                size, self.range.end
+            );
+            return Err(vk::ERROR_OUT_OF_DEVICE_MEMORY.into());
         }
 
         loop {
             let mut all_without_mem = true;
-            let iter = self.pages.iter_indexed()
+            let iter = self
+                .pages
+                .iter_indexed()
                 .filter_map(|(i, x)| x.get().map(|x| (i, x)))
                 .filter(|(_, x)| x.flags == flags);
 
@@ -851,12 +847,13 @@ unsafe impl<D: Deref<Target = Device>> DeviceAllocator for Book<D> {
                 if let Ok((idx, cell)) = self.pages.try_push(OnceCell::new()) {
                     unsafe {
                         let mut page = Page::new(
-                            StandardDevice(self.device.deref()),
+                            StandardContext(self.context.deref()),
                             u64::max(self.range.start, size),
                             flags,
                         )?;
 
-                        let MemoryPtr { inner, _meta, .. } = page.allocate_mut(size, align, flags)?;
+                        let MemoryPtr { inner, _meta, .. } =
+                            page.allocate_mut(size, align, flags)?;
                         let _ = cell.set(page).unwrap_unchecked();
 
                         return Ok(MemoryPtr::new(
@@ -865,7 +862,7 @@ unsafe impl<D: Deref<Target = Device>> DeviceAllocator for Book<D> {
                                 page_idx: idx,
                                 page_info: _meta,
                             },
-                        ))
+                        ));
                     }
                 }
             }
@@ -877,10 +874,14 @@ unsafe impl<D: Deref<Target = Device>> DeviceAllocator for Book<D> {
     #[inline]
     unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
         if let Some(page) = self.pages.get(ptr._meta.page_idx).and_then(OnceCell::get) {
-            page.free(MemoryPtr { inner: ptr.inner, _meta: ptr._meta.page_info, _phtm: PhantomData });
+            page.free(MemoryPtr {
+                inner: ptr.inner,
+                _meta: ptr._meta.page_info,
+                _phtm: PhantomData,
+            });
         }
         #[cfg(debug_assertions)]
-        eprintln!("Invalid page index provided");
+        eprintln!("Invalid page index provided on free");
     }
 
     unsafe fn map(
@@ -889,21 +890,32 @@ unsafe impl<D: Deref<Target = Device>> DeviceAllocator for Book<D> {
         bounds: impl RangeBounds<usize>,
     ) -> Result<NonNull<[u8]>> {
         if let Some(page) = self.pages.get(ptr._meta.page_idx).and_then(OnceCell::get) {
-            return page.map(&MemoryPtr { inner: ptr.inner, _meta: ptr._meta.page_info.clone(), _phtm: PhantomData }, bounds);
+            return page.map(
+                &MemoryPtr {
+                    inner: ptr.inner,
+                    _meta: ptr._meta.page_info.clone(),
+                    _phtm: PhantomData,
+                },
+                bounds,
+            );
         }
 
         #[cfg(debug_assertions)]
-        eprintln!("Invalid page index provided");
-        return Err(vk::ERROR_MEMORY_MAP_FAILED.into())
+        eprintln!("Invalid page index provided on map");
+        return Err(vk::ERROR_MEMORY_MAP_FAILED.into());
     }
 
     #[inline]
     unsafe fn unmap(&self, ptr: &MemoryPtr<Self::Metadata>) {
         if let Some(page) = self.pages.get(ptr._meta.page_idx).and_then(OnceCell::get) {
-            page.unmap(&MemoryPtr { inner: ptr.inner, _meta: ptr._meta.page_info.clone(), _phtm: PhantomData });
+            page.unmap(&MemoryPtr {
+                inner: ptr.inner,
+                _meta: ptr._meta.page_info.clone(),
+                _phtm: PhantomData,
+            });
         }
         #[cfg(debug_assertions)]
-        eprintln!("Invalid page index provided");
+        eprintln!("Invalid page index provided on unmap");
     }
 }
 

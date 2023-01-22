@@ -1,10 +1,8 @@
 use super::Command;
-use crate::{buffer::Buffer, Entry, Result, utils::usize_to_u32, alloc::DeviceAllocator, context::QueueFamily};
+use crate::{buffer::Buffer, Entry, Result, utils::usize_to_u32, alloc::DeviceAllocator};
 use std::{
     marker::PhantomData,
-    num::NonZeroU64,
     ops::{Bound, RangeBounds},
-    sync::MutexGuard,
 };
 
 pub struct TransferCommand<'a, 'b> {
@@ -14,13 +12,13 @@ pub struct TransferCommand<'a, 'b> {
 
 impl<'a, 'b> TransferCommand<'a, 'b> {
     #[inline]
-    pub(crate) fn new(family: &'a QueueFamily, pool_buffer: MutexGuard<'a, [NonZeroU64; 2]>) -> Result<Self> {
-        Command::new(family, pool_buffer).map(Self)
+    pub(crate) fn new (cmd: Command<'a>) -> Self {
+        return Self { cmd, _phtm: PhantomData }
     }
 
     #[inline]
     pub fn buffer_copy<T: Copy, S: DeviceAllocator, D: DeviceAllocator>(
-        mut self,
+        self,
         src: &'b Buffer<T, S>,
         dst: &'b mut Buffer<T, D>,
         regions: impl IntoIterator<Item = BufferCopyRegion<impl RangeBounds<vk::DeviceSize>, T>>,
@@ -37,8 +35,8 @@ impl<'a, 'b> TransferCommand<'a, 'b> {
     }
 
     #[inline]
-    pub fn execute (self) {
-        self.cmd.submit();
+    pub fn execute (self) -> Result<()> {
+        self.cmd.submit()
     }
 }
 
@@ -51,9 +49,9 @@ pub struct BufferCopyRegion<B, T> {
 
 impl<T, B: RangeBounds<vk::DeviceSize>> BufferCopyRegion<B, T> {
     #[inline]
-    pub const fn new(src_offset: Option<Bound<vk::DeviceSize>>, dst_bounds: B) -> Self {
+    pub fn new(src_offset: Option<Bound<vk::DeviceSize>>, dst_bounds: B) -> Self {
         return Self {
-            src_offset: src_offset.unwrap_or_else(|| *dst_bounds.start_bound()),
+            src_offset: src_offset.unwrap_or_else(|| dst_bounds.start_bound().cloned()),
             dst_bounds,
             _phtm: PhantomData,
         };

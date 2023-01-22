@@ -1,5 +1,5 @@
 use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ops::{Deref, DerefMut}};
-use crate::{utils::usize_to_u32, Result, device::{Device}, Entry, shader::Shader, buffer::Buffer, alloc::DeviceAllocator, context::{ContextRef}};
+use crate::{utils::usize_to_u32, Result, device::{Device}, Entry, shader::Shader, buffer::Buffer, alloc::DeviceAllocator, context::{ContextRef, Context}};
 
 pub struct Builder<C> {
     pub(crate) flags: DescriptorPoolFlags,
@@ -33,7 +33,7 @@ impl<C: ContextRef> Builder<C> {
 
     #[inline]
     pub fn build (self) -> Result<DescriptorPool<C>> {
-        return DescriptorPool::new(self.device, self.capacity, self.flags, &self.pool_sizes)
+        return DescriptorPool::new(self.context, self.capacity, self.flags, &self.pool_sizes)
     }
 }
 
@@ -81,6 +81,11 @@ impl<C: ContextRef> DescriptorPool<C> {
     }
 
     #[inline]
+    pub fn context (&self) -> &Context {
+        return &self.context
+    }
+    
+    #[inline]
     pub fn device (&self) -> &Device {
         return self.context.device()
     }
@@ -113,7 +118,7 @@ impl<C: ContextRef> DescriptorSets<C> {
         let mut sets = Box::<[vk::DescriptorSet]>::new_uninit_slice(shaders.len());
         tri! {
             (Entry::get().allocate_descriptor_sets)(
-                pool.device.id(),
+                pool.context.device().id(),
                 addr_of!(info),
                 sets.as_mut_ptr().cast()
             )
@@ -133,6 +138,11 @@ impl<C: ContextRef> DescriptorSets<C> {
         return &self.pool
     }
 
+    #[inline]
+    pub fn context (&self) -> &Context {
+        return &self.pool.context()
+    }
+    
     #[inline]
     pub fn device (&self) -> &Device {
         return self.pool.device()
@@ -180,7 +190,7 @@ impl<C: ContextRef> Drop for DescriptorSets<C> {
     #[inline]
     fn drop(&mut self) {
         let result = (Entry::get().free_descriptor_sets)(
-            self.pool.device.id(),
+            self.pool.context.device().id(),
             self.pool.id(),
             usize_to_u32(self.inner.len()),
             self.inner.as_ptr().cast()

@@ -94,14 +94,14 @@ impl<'a, C: ContextRef> Builder<'a, C> {
 
         let mut layout = 0;
         tri! {
-            (entry.create_descriptor_set_layout)(self.device.id(), addr_of!(info), core::ptr::null(), addr_of_mut!(layout))
+            (entry.create_descriptor_set_layout)(self.context.device().id(), addr_of!(info), core::ptr::null(), addr_of_mut!(layout))
         }
 
         if let Some(layout) = NonZeroU64::new(layout) {
             let module = match self.build_module(entry, words) {
                 Ok(x) => x,
                 Err(e) => {
-                    (Entry::get().destroy_descriptor_set_layout)(self.device.id(), layout.get(), core::ptr::null());
+                    (Entry::get().destroy_descriptor_set_layout)(self.context.device().id(), layout.get(), core::ptr::null());
                     return Err(e)
                 }
             };
@@ -127,7 +127,7 @@ impl<'a, C: ContextRef> Builder<'a, C> {
 
         let mut module = 0;
         tri! {
-            (entry.create_shader_module)(self.device.id(), addr_of!(module_info), core::ptr::null(), addr_of_mut!(module))
+            (entry.create_shader_module)(self.context.device().id(), addr_of!(module_info), core::ptr::null(), addr_of_mut!(module))
         };
 
         return NonZeroU64::new(module).ok_or(vk::ERROR_INITIALIZATION_FAILED.into());

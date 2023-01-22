@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of, NonNull}, hash::Hash, ffi::CStr, pin::Pin};
+use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of, NonNull}, hash::Hash, ffi::CStr};
 use crate::{Result, Entry, physical_dev::{PhysicalDevice, QueueFamily}, utils::usize_to_u32};
 
 #[derive(Debug)]
@@ -51,7 +51,7 @@ impl Drop for Device {
 pub struct Builder<'a> {
     inner: vk::DeviceCreateInfo,
     parent: PhysicalDevice,
-    queue_infos: Pin<Vec<vk::DeviceQueueCreateInfo>>,
+    queue_infos: Vec<vk::DeviceQueueCreateInfo>,
     _phtm: PhantomData<(&'a vk::PhysicalDeviceFeatures, &'a CStr)>
 }
 
@@ -71,7 +71,7 @@ impl<'a> Builder<'a> {
                 pEnabledFeatures: Box::into_raw(parent.features()).cast(),
             },
             parent,
-            queue_infos: Pin::new(Vec::new()),
+            queue_infos: Vec::new(),
             _phtm: PhantomData
         }
     }
@@ -155,7 +155,6 @@ pub struct QueueBuilder<'a> {
 impl<'a> QueueBuilder<'a> {
     #[inline]
     pub fn new (mut parent: Builder<'a>, priorities: &'a [f32]) -> Self {
-        debug_assert!(f32::abs(priorities.iter().sum::<f32>() - 1f32) < f32::EPSILON);
         parent.queue_infos.push(vk::DeviceQueueCreateInfo {
             sType: vk::STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
             pNext: core::ptr::null_mut(),

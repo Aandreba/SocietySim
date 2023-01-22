@@ -1,22 +1,25 @@
+use self::command::{Command, ComputeCommand, TransferCommand};
 use crate::{
+    descriptor::DescriptorSet,
     device::Device,
+    error::Error,
     physical_dev::{PhysicalDevice, QueueFlags},
     utils::usize_to_u32,
-    Entry, Result, error::Error,
+    Entry, Result, pipeline::Pipeline,
 };
 use std::{
     num::NonZeroU64,
+    ops::{Deref, Index, RangeBounds},
     ptr::{addr_of, addr_of_mut},
-    sync::{Mutex, TryLockError}, ops::Deref,
+    sync::{Mutex, TryLockError},
 };
-use self::command::Command;
 
 pub trait ContextRef = Deref<Target = Context>;
 pub mod command;
 
 // https://stackoverflow.com/a/55273688
 #[derive(Debug)]
-struct QueueFamily {
+pub(crate) struct QueueFamily {
     flags: QueueFlags,
     queues: Vec<Mutex<NonZeroU64>>,
     pool_buffer: Mutex<[NonZeroU64; 2]>,
@@ -32,7 +35,6 @@ impl Context {
     #[inline]
     pub fn new(phy: PhysicalDevice) -> Result<Self> {
         let family_props = phy.queue_families_raw();
-        let mut device = Device::builder(phy);
 
         let mut priorities = Vec::new();
         for props in family_props.iter() {
@@ -44,6 +46,7 @@ impl Context {
             }
         }
 
+        let mut device = Device::builder(phy);
         for (props, i) in family_props.iter().zip(0u32..) {
             device = device
                 .queues(&priorities[..(props.queueCount as usize)])
@@ -53,7 +56,7 @@ impl Context {
 
         let device = device.build()?;
         let mut families = Vec::with_capacity(family_props.len());
-        
+
         for i in 0..usize_to_u32(family_props.len()) {
             let family = &family_props[i as usize];
             let pool = Self::create_command_pool(&device, i)?;
@@ -79,6 +82,29 @@ impl Context {
             device,
             families: families.into_boxed_slice(),
         });
+    }
+
+    #[inline]
+    pub fn device(&self) -> &Device {
+        &self.device
+    }
+
+    #[inline]
+    fn command(&self, flags: QueueFlags) -> Result<Command<'_>> {
+        let (pool, family) = 'outer: loop {
+            for family in self.families.iter() {
+                if family.flags.contains(flags) {
+                    match family.pool_buffer.try_lock() {
+                        Ok(x) => break 'outer (x, family),
+                        Err(TryLockError::Poisoned(e)) => break 'outer (e.into_inner(), family),
+                        Err(_) => {}
+                    }
+                }
+            }
+            std::thread::yield_now();
+        };
+
+        return Command::new(family, pool);
     }
 }
 
@@ -123,25 +149,20 @@ impl Context {
 
 impl Context {
     #[inline]
-    pub fn device(&self) -> &Device {
-        &self.device
+    pub fn compute_command<'b, C: ContextRef, R: RangeBounds<usize>>(
+        &self,
+        pipeline: &'b Pipeline<C>,
+        desc_sets: R,
+    ) -> Result<ComputeCommand<'_, 'b, C>>
+    where
+        [DescriptorSet]: Index<R, Output = [DescriptorSet]>,
+    {
+        let cmd = self.command(QueueFlags::COMPUTE)?;
+        return ComputeCommand::new(cmd, pipeline, desc_sets)
     }
 
     #[inline]
-    fn command(&self, flags: QueueFlags) -> Result<Command<'_>> {
-        let (pool, family) = 'outer: loop {
-            for family in self.families.iter() {
-                if family.flags.contains(flags) {
-                    match family.pool_buffer.try_lock() {
-                        Ok(x) => break 'outer (x, family),
-                        Err(TryLockError::Poisoned(e)) => break 'outer (e.into_inner(), family),
-                        Err(_) => {}
-                    }
-                }
-            }
-            std::thread::yield_now();
-        };
-
-        return Command::new(family, pool);
+    pub fn transfer_command<'b> (&self) -> Result<TransferCommand<'_, 'b>> {
+        return self.command(QueueFlags::TRANSFER).map(TransferCommand::new);
     }
 }

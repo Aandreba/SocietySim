@@ -1,21 +1,19 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata, rustc_attrs)]
 
-use std::{collections::HashMap, io::BufReader, panic::resume_unwind, path::{Path}, ptr::NonNull};
-use context::Context;
 use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
 use shared::{person::Person, person_event::PersonalEvent, ExternBool};
+use std::{collections::HashMap, io::BufReader, panic::resume_unwind, path::Path};
 use tokio::runtime::Runtime;
 use vulkan::{
-    alloc::{DeviceAllocator, MemoryFlags, Book},
+    alloc::{Book, DeviceAllocator, MemoryFlags},
     buffer::{Buffer, BufferFlags, UsageFlags},
-    device::{Device, DeviceRef},
+    context::{Context},
     physical_dev::PhysicalDevice,
-    Entry, shared::SharedPtr,
+    Entry,
 };
 
 use crate::game::{generate_people::GeneratePeople, personal_events::PersonalEvents};
-pub mod context;
 pub mod game;
 
 #[macro_export]
@@ -34,16 +32,17 @@ fn main() -> anyhow::Result<()> {
     let runtime = Runtime::new()?;
 
     let phy = PhysicalDevice::first()?;
-    let (dev, queues) = Device::builder(phy).queues(&[1f32]).build().build()?;
-    let alloc = Book::new(&dev, None, None);
-    let mut ctx = Context::new(&dev, queues.into_iter().next().unwrap())?;
+    let ctx = Context::new(phy)?;
+    let alloc = Book::new(&ctx, None, None); // todo fix alloc bug
 
-    let people = initialize_population(10, &mut ctx, &alloc)?;
-    let (_event_names, events) =
-        runtime.block_on(initialize_personal_events("game/personal_events", &mut ctx, &alloc))?;
+    let people = initialize_population(10, &alloc)?;
+    let (_event_names, events) = runtime.block_on(initialize_personal_events(
+        "game/personal_events",
+        &alloc,
+    ))?;
 
-    let mut evt = PersonalEvents::new(&dev)?;
-    let result = evt.call(&people, &events, &mut ctx)?;
+    let mut evt = PersonalEvents::new(&ctx)?;
+    let result = evt.call(&people, &events)?;
 
     let result = result.map(..)?;
     println!("{:#?}", &result as &[ExternBool]);
@@ -59,12 +58,14 @@ fn main() -> anyhow::Result<()> {
 }
 
 #[inline]
-fn initialize_population<D: Clone + DeviceRef, A: DeviceAllocator>(
+fn initialize_population<A: DeviceAllocator>(
     capacity: u64,
-    ctx: &mut Context<D>,
     alloc: A,
-) -> vulkan::Result<Buffer<Person, A>> {
-    let mut generator = GeneratePeople::new(ctx.owned_device())?;
+) -> vulkan::Result<Buffer<Person, A>>
+where
+    A::Context: Clone,
+{
+    let mut generator = GeneratePeople::new(alloc.owned_context())?;
     return generator.generate(
         capacity,
         UsageFlags::STORAGE_BUFFER,
@@ -72,18 +73,12 @@ fn initialize_population<D: Clone + DeviceRef, A: DeviceAllocator>(
         // MemoryFlags::DEVICE_LOCAL,
         MemoryFlags::MAPABLE,
         alloc,
-        ctx,
     );
 }
 
 #[inline]
-async fn initialize_personal_events<
-    P: 'static + Send + Clone + AsRef<Path>,
-    D: Clone + DeviceRef,
-    A: DeviceAllocator,
->(
+async fn initialize_personal_events<P: 'static + Send + Clone + AsRef<Path>, A: DeviceAllocator>(
     path: P,
-    ctx: &mut Context<D>,
     alloc: A,
 ) -> anyhow::Result<(Vec<String>, Buffer<PersonalEvent, A>)> {
     let mut handles = FuturesUnordered::new();
@@ -134,14 +129,22 @@ async fn initialize_personal_events<
 }
 
 #[test]
-fn disassemble () -> anyhow::Result<()> {
-    fn get_path (name: impl AsRef<Path>) -> anyhow::Result<std::path::PathBuf> {
-        return Ok(["target", "spirv-builder", "spirv-unknown-vulkan1.1", "release", "deps", "gpu.spvs"].into_iter()
-            .fold(std::env::current_dir()?, |x, y| x.join(y))
-            .join(name.as_ref().with_extension("spv")));
+fn disassemble() -> anyhow::Result<()> {
+    fn get_path(name: impl AsRef<Path>) -> anyhow::Result<std::path::PathBuf> {
+        return Ok([
+            "target",
+            "spirv-builder",
+            "spirv-unknown-vulkan1.1",
+            "release",
+            "deps",
+            "gpu.spvs",
+        ]
+        .into_iter()
+        .fold(std::env::current_dir()?, |x, y| x.join(y))
+        .join(name.as_ref().with_extension("spv")));
     }
 
-    fn spirv_cross (name: impl AsRef<Path>) -> anyhow::Result<()> {
+    fn spirv_cross(name: impl AsRef<Path>) -> anyhow::Result<()> {
         let path = get_path(name.as_ref())?;
         let cmd = std::process::Command::new("spirv-cross")
             .arg("--msl")
@@ -153,24 +156,11 @@ fn disassemble () -> anyhow::Result<()> {
         } else {
             std::io::copy(&mut cmd.stderr.as_slice(), &mut std::io::stderr())?;
         }
-        return Ok(())
+        return Ok(());
     }
 
     spirv_cross("generate_people")?;
     spirv_cross("compute_personal_event")?;
 
-    return Ok(())
-}
-
-#[test]
-fn shared_ptr () -> anyhow::Result<()> {
-    let _ = unsafe { Entry::builder(1, 1, 0).build() }?;
-    let phy = PhysicalDevice::first()?;
-    let (dev, queues) = Device::builder(phy).queues(&[1f32]).build().build()?;
-
-    let mut ptr = Box::new(3);
-    let shared = SharedPtr::from_ptr(&dev, NonNull::new(&mut ptr as &mut i32).unwrap())?;
-    println!("{shared:#?}");
-
-    return Ok(())
+    return Ok(());
 }

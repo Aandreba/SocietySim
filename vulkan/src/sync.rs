@@ -92,8 +92,7 @@ impl<C: ContextRef> Fence<C> {
     //         .submit()
     // }
 
-    #[inline]
-    pub fn wait(&self, timeout: Option<Duration>) -> Result<bool> {
+    pub fn wait (&self, timeout: Option<Duration>) -> Result<bool> {
         #[inline]
         fn wait_for_fences (this: &NonZeroU64, device: &Device, nanos: u64) -> vk::Result {
             return (Entry::get().wait_for_fences)(
@@ -113,7 +112,7 @@ impl<C: ContextRef> Fence<C> {
             let rem = (nanos % LIMIT) as u64; // [0, u64::MAX)
 
             for _ in 0..div {
-                match wait_for_fences(&self.inner, self.device(), rem) {
+                match wait_for_fences(&self.inner, self.device(), u64::MAX) {
                     vk::SUCCESS => return Ok(true),
                     vk::TIMEOUT => {},
                     e => return Err(e.into()),
@@ -155,51 +154,7 @@ impl<C: ContextRef> Fence<C> {
 impl<D: ContextRef> Drop for Fence<D> {
     #[inline]
     fn drop(&mut self) {
-        (Entry::get().destroy_fence)(self.parent.id(), self.id(), core::ptr::null())
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub struct Semaphore<D: ContextRef> {
-    inner: NonZeroU64,
-    parent: D,
-}
-
-impl<D: ContextRef> Semaphore<D> {
-    #[inline]
-    pub fn new(parent: D) -> Result<Self> {
-        let info = vk::SemaphoreCreateInfo {
-            sType: vk::STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-            pNext: core::ptr::null(),
-            flags: 0,
-        };
-
-        let mut result = 0;
-        tri! {
-            (Entry::get().create_semaphore)(
-                parent.id(),
-                addr_of!(info),
-                core::ptr::null(),
-                addr_of_mut!(result)
-            )
-        }
-
-        if let Some(inner) = NonZeroU64::new(result) {
-            return Ok(Self { inner, parent });
-        }
-        return Err(vk::ERROR_UNKNOWN.into());
-    }
-
-    #[inline]
-    pub fn id(&self) -> u64 {
-        return self.inner.get();
-    }
-}
-
-impl<D: ContextRef> Drop for Semaphore<D> {
-    #[inline]
-    fn drop(&mut self) {
-        (Entry::get().destroy_semaphore)(self.parent.id(), self.id(), core::ptr::null())
+        (Entry::get().destroy_fence)(self.device().id(), self.id(), core::ptr::null())
     }
 }
 

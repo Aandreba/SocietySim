@@ -1,27 +1,25 @@
+use std::time::Duration;
+
 use rand::{distributions::OpenClosed01, thread_rng, Rng};
 use shared::{person::Person, person_event::PersonalEvent, ExternBool};
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags},
     buffer::{Buffer, UsageFlags, BufferFlags},
-    device::DeviceRef,
     pipeline::{ComputeBuilder, Pipeline},
-    pool::{CommandBufferUsage, PipelineBindPoint},
-    Result, descriptor::{DescriptorSet, DescriptorType}, utils::u64_to_u32, shader::ShaderStages, cstr, sync::{FenceFlags, Fence}, include_spv,
+    Result, descriptor::{DescriptorSet, DescriptorType}, utils::u64_to_u32, shader::ShaderStages, cstr, sync::{FenceFlags, Fence}, include_spv, context::{ContextRef, Context},
 };
 
-use crate::context::Context;
-
-pub struct PersonalEvents<D: DeviceRef> {
-    pipeline: Pipeline<D>,
+pub struct PersonalEvents<C: ContextRef> {
+    pipeline: Pipeline<C>,
     seed: f32,
 }
 
-impl<D: DeviceRef> PersonalEvents<D> {
+impl<C: ContextRef> PersonalEvents<C> {
     #[inline]
-    pub fn new (dev: D) -> Result<Self> where D: Clone {
+    pub fn new (context: C) -> Result<Self> where C: Clone {
         const WORDS: &[u32] = include_spv!("compute_personal_event.spv");
 
-        let pipeline = ComputeBuilder::new(dev)
+        let pipeline = ComputeBuilder::new(context)
             .entry(cstr!("compute_personal_event"))
             .binding(DescriptorType::StorageBuffer, 1)
             .binding(DescriptorType::StorageBuffer, 1)
@@ -35,11 +33,15 @@ impl<D: DeviceRef> PersonalEvents<D> {
     }
 
     #[inline]
-    pub fn call<Ctx: DeviceRef, P: Clone + DeviceAllocator, E: DeviceAllocator>(
+    pub fn context (&self) -> &Context {
+        return self.pipeline.context()
+    }
+
+    #[inline]
+    pub fn call<P: Clone + DeviceAllocator, E: DeviceAllocator>(
         &mut self,
         people: &Buffer<Person, P>,
-        events: &Buffer<PersonalEvent, E>,
-        ctx: &mut Context<Ctx>
+        events: &Buffer<PersonalEvent, E>
     ) -> Result<Buffer<ExternBool, P>> {
         let result = Buffer::<ExternBool, _>::new_uninit(
             people.len() * events.len(),
@@ -55,15 +57,15 @@ impl<D: DeviceRef> PersonalEvents<D> {
         let result_desc = set.write_descriptor(&result, 0);
         self.pipeline.sets_mut().update(&[people_desc, events_desc, result_desc]);
 
-        let mut cmd_buff = ctx.pool.begin_mut(0, CommandBufferUsage::ONE_TIME_SUBMIT)?;
-        cmd_buff.bind_pipeline(PipelineBindPoint::Compute, &self.pipeline, ..);
-        cmd_buff.push_contant(&self.seed, ShaderStages::COMPUTE)?;
-        cmd_buff.dispatch(u64_to_u32(people.len()), u64_to_u32(events.len()), 1);
-        drop(cmd_buff);
+        // TODO maybe this is not thread-safe. dsc_sets may need external synchronization
+        self.pipeline.compute(..)?
+            .push_contant(&self.seed)
+            .dispatch(u64_to_u32(people.len()), u64_to_u32(events.len()), 1)?;
 
-        let mut fence = Fence::new(self.pipeline.device(), FenceFlags::empty())?;
-        fence.bind_to::<_, Ctx>(&mut ctx.pool, &mut ctx.queue, None)?;
-        fence.wait(None)?;
+        std::thread::sleep(Duration::from_secs(2));
+        // let mut fence = Fence::new(self.pipeline.device(), FenceFlags::empty())?;
+        // fence.bind_to::<_, Ctx>(&mut ctx.pool, &mut ctx.queue, None)?;
+        // fence.wait(None)?;
 
         self.seed = 100f32 * thread_rng().sample::<f32, _>(OpenClosed01);
         return unsafe { Ok(result.assume_init()) };

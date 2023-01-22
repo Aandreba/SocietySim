@@ -1,5 +1,5 @@
-use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ffi::CStr};
-use crate::{shader::{LayoutCreateFlags, ShaderStages, Shader}, Entry, Result, device::{Device}, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSets}, context::ContextRef};
+use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ffi::CStr, ops::{Index, RangeBounds}};
+use crate::{shader::{LayoutCreateFlags, ShaderStages, Shader}, Entry, Result, device::{Device}, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSets, DescriptorSet}, context::{ContextRef, Context, command::ComputeCommand}};
 use proc::cstr;
 
 const DEFAULT_ENTRY: &CStr = cstr!("main");
@@ -96,10 +96,10 @@ impl<'a, C: Clone + ContextRef> ComputeBuilder<'a, C> {
             };
             let mut my_cache = 0;
             tri! {
-                (entry.create_pipeline_cache)(self.device.id(), addr_of!(cache_info), core::ptr::null(), addr_of_mut!(my_cache))
+                (entry.create_pipeline_cache)(self.context.device().id(), addr_of!(cache_info), core::ptr::null(), addr_of_mut!(my_cache))
             }
             if let Some(my_cache) = NonZeroU64::new(my_cache) {
-                cache = Some(PipelineCache { inner: my_cache, device: self.device.clone() });
+                cache = Some(PipelineCache { inner: my_cache, context: self.context.clone() });
             } else {
                 return Err(vk::ERROR_UNKNOWN.into())
             }
@@ -116,7 +116,7 @@ impl<'a, C: Clone + ContextRef> ComputeBuilder<'a, C> {
             pushConstantRangeCount: 0,
             pPushConstantRanges: core::ptr::null(),
         };
-        tri! { (entry.create_pipeline_layout)(self.device.id(), addr_of!(layout_info), core::ptr::null(), addr_of_mut!(my_layout)) }
+        tri! { (entry.create_pipeline_layout)(self.context.device().id(), addr_of!(layout_info), core::ptr::null(), addr_of_mut!(my_layout)) }
         let layout;
         if let Some(my_layout) = NonZeroU64::new(my_layout) {
             layout = my_layout;
@@ -147,7 +147,7 @@ impl<'a, C: Clone + ContextRef> ComputeBuilder<'a, C> {
         };
 
         match (entry.create_compute_pipelines)(
-            self.device.id(),
+            self.context.device().id(),
             cache.as_ref().map_or(vk::NULL_HANDLE, PipelineCache::id),
             1,
             addr_of!(info),
@@ -156,7 +156,7 @@ impl<'a, C: Clone + ContextRef> ComputeBuilder<'a, C> {
         ) {
             vk::SUCCESS => {},
             e => {
-                (Entry::get().destroy_pipeline_layout)(self.device.id(), layout.get(), core::ptr::null());
+                (Entry::get().destroy_pipeline_layout)(self.context.device().id(), layout.get(), core::ptr::null());
                 return Err(e.into())
             }
         }
@@ -165,7 +165,7 @@ impl<'a, C: Clone + ContextRef> ComputeBuilder<'a, C> {
             let pool = match self.build_descriptor_pool() {
                 Ok(x) => x,
                 Err(e) => {
-                    (Entry::get().destroy_pipeline)(self.device.id(), inner.get(), core::ptr::null());
+                    (Entry::get().destroy_pipeline)(self.context.device().id(), inner.get(), core::ptr::null());
                     return Err(e);
                 }
             };
@@ -174,7 +174,7 @@ impl<'a, C: Clone + ContextRef> ComputeBuilder<'a, C> {
             return Ok(Pipeline { inner, layout, sets })
         }
 
-        (Entry::get().destroy_pipeline_layout)(self.device.id(), layout.get(), core::ptr::null());
+        (Entry::get().destroy_pipeline_layout)(self.context.device().id(), layout.get(), core::ptr::null());
         return Err(vk::ERROR_UNKNOWN.into())
     }
 
@@ -226,6 +226,11 @@ impl<C: ContextRef> Pipeline<C> {
     }
 
     #[inline]
+    pub fn context (&self) -> &Context {
+        return self.sets.context();
+    }
+
+    #[inline]
     pub fn sets (&self) -> &DescriptorSets<C> {
         return &self.sets
     }
@@ -240,10 +245,10 @@ impl<C: ContextRef> Pipeline<C> {
         return self.sets.pool()
     }
 
-    /*#[inline]
-    pub fn compute<'b: 'a> (shader: &'b Shader<'a>) -> ComputeBuilder<'a, 'b> {
-        return ComputeBuilder::new(shader)
-    }*/
+    #[inline]
+    pub fn compute<R: RangeBounds<usize>> (&self, desc_sets: R) -> Result<ComputeCommand<'_, '_, C>> where [DescriptorSet]: Index<R, Output = [DescriptorSet]>,{
+        return self.context().compute_command(self, desc_sets)
+    }
 }
 
 impl<C: ContextRef> Drop for Pipeline<C> {
@@ -368,6 +373,7 @@ bitflags::bitflags! {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(i32)]
 pub enum PipelineBindPoint {
     Graphics = vk::PIPELINE_BIND_POINT_GRAPHICS,
@@ -379,7 +385,7 @@ pub enum PipelineBindPoint {
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct PipelineCache<D: ContextRef> {
     inner: NonZeroU64,
-    device: D
+    context: D
 }
 
 impl<D: ContextRef> PipelineCache<D> {
@@ -392,6 +398,6 @@ impl<D: ContextRef> PipelineCache<D> {
 impl<D: ContextRef> Drop for PipelineCache<D> {
     #[inline]
     fn drop(&mut self) {
-        (Entry::get().destroy_pipeline_cache)(self.device.id(), self.id(), core::ptr::null())
+        (Entry::get().destroy_pipeline_cache)(self.context.device().id(), self.id(), core::ptr::null())
     }
 }
