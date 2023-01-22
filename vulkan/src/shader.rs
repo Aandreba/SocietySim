@@ -1,17 +1,17 @@
 use std::{ptr::{addr_of, addr_of_mut}, num::NonZeroU64, ffi::CStr};
-use crate::{Result, Entry, device::{Device, DeviceRef}, utils::usize_to_u32, descriptor::DescriptorType};
+use crate::{Result, Entry, device::{Device}, utils::usize_to_u32, descriptor::DescriptorType, context::ContextRef};
 use proc::cstr;
 
 const DEFAULT_ENTRY: &CStr = cstr!("main");
 
 //#[derive(PartialEq, Eq, Hash)]
-pub struct Shader<D: DeviceRef> {
+pub struct Shader<C: ContextRef> {
     module: NonZeroU64,
     layout: NonZeroU64,
-    device: D,
+    context: C,
 }
 
-impl<D: DeviceRef> Shader<D> {
+impl<C: ContextRef> Shader<C> {
     #[inline]
     pub fn module (&self) -> u64 {
         return self.module.get()
@@ -24,11 +24,11 @@ impl<D: DeviceRef> Shader<D> {
 
     #[inline]
     pub fn device (&self) -> &Device {
-        return self.device.deref()
+        return self.context.device()
     }
 }
 
-impl<D: DeviceRef> Drop for Shader<D> {
+impl<C: ContextRef> Drop for Shader<C> {
     #[inline]
     fn drop(&mut self) {
         let entry = Entry::get();
@@ -37,23 +37,23 @@ impl<D: DeviceRef> Drop for Shader<D> {
     }
 }
 
-pub struct Builder<'a, D> {
+pub struct Builder<'a, C> {
     pub(crate) bindings: Vec<vk::DescriptorSetLayoutBinding>,
     pub(crate) flags: LayoutCreateFlags,
     pub(crate) stage: ShaderStages,
-    pub(crate) device: D,
+    pub(crate) context: C,
     pub(crate) entry: &'a CStr
 }
 
-impl<'a, D: DeviceRef> Builder<'a, D> {
+impl<'a, C: ContextRef> Builder<'a, C> {
     #[inline]
-    pub fn new (device: D, stage: ShaderStages) -> Self {
+    pub fn new (context: C, stage: ShaderStages) -> Self {
         return Self {
             bindings: Vec::new(),
             flags: LayoutCreateFlags::empty(),
             entry: DEFAULT_ENTRY,
             stage,
-            device
+            context
         }
     }
 
@@ -82,7 +82,7 @@ impl<'a, D: DeviceRef> Builder<'a, D> {
         self
     }
 
-    pub fn build (mut self, words: &[u32]) -> Result<Shader<D>> {
+    pub fn build (mut self, words: &[u32]) -> Result<Shader<C>> {
         let entry = Entry::get();
         let info = vk::DescriptorSetLayoutCreateInfo {
             sType: vk::STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -109,7 +109,7 @@ impl<'a, D: DeviceRef> Builder<'a, D> {
             return Ok(Shader {
                 module,
                 layout,
-                device: self.device
+                context: self.context
             })
         }
 

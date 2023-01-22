@@ -1,23 +1,23 @@
 use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ffi::CStr};
-use crate::{shader::{LayoutCreateFlags, ShaderStages, Shader}, Entry, Result, device::{Device, DeviceRef}, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSets}};
+use crate::{shader::{LayoutCreateFlags, ShaderStages, Shader}, Entry, Result, device::{Device}, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSets}, context::ContextRef};
 use proc::cstr;
 
 const DEFAULT_ENTRY: &CStr = cstr!("main");
 
-pub struct ComputeBuilder<'a, D> {
+pub struct ComputeBuilder<'a, C> {
     pipe_flags: PipelineFlags,
     pipe_layout_flags: PipelineLayoutFlags,
     cache_flags: Option<PipelineCacheFlags>,
     layout_flags: LayoutCreateFlags,
     bindings: Vec<vk::DescriptorSetLayoutBinding>,
     pool_sizes: Vec<vk::DescriptorPoolSize>,
-    device: D,
+    context: C,
     entry: &'a CStr
 }
 
-impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
+impl<'a, C: Clone + ContextRef> ComputeBuilder<'a, C> {
     #[inline]
-    pub fn new (device: D) -> Self {
+    pub fn new (context: C) -> Self {
         return Self {
             pipe_flags: PipelineFlags::empty(),
             pipe_layout_flags: PipelineLayoutFlags::empty(),
@@ -26,7 +26,7 @@ impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
             bindings: Vec::new(),
             pool_sizes: Vec::new(),
             entry: DEFAULT_ENTRY,
-            device,
+            context,
         }
     }
 
@@ -80,7 +80,7 @@ impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
         self
     }
 
-    pub fn build (mut self, words: &[u32]) -> Result<Pipeline<D>> {
+    pub fn build (mut self, words: &[u32]) -> Result<Pipeline<C>> {
         let entry = Entry::get();
         let shader = self.build_shader(words)?;
 
@@ -178,24 +178,24 @@ impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
         return Err(vk::ERROR_UNKNOWN.into())
     }
 
-    fn build_shader (&mut self, words: &[u32]) -> Result<Shader<D>> {
+    fn build_shader (&mut self, words: &[u32]) -> Result<Shader<C>> {
         let builder = crate::shader::Builder {
             bindings: core::mem::take(&mut self.bindings),
             flags: self.layout_flags,
             stage: ShaderStages::COMPUTE,
-            device: self.device.clone(),
+            context: self.context.clone(),
             entry: self.entry,
         };
 
         return builder.build(words);
     }
 
-    fn build_descriptor_pool (&mut self) -> Result<DescriptorPool<D>> {
+    fn build_descriptor_pool (&mut self) -> Result<DescriptorPool<C>> {
         let builder = crate::descriptor::Builder {
             flags: DescriptorPoolFlags::empty(),
             capacity: 1,
             pool_sizes: core::mem::take(&mut self.pool_sizes),
-            device: self.device.clone(),
+            context: self.context.clone(),
         };
 
         return builder.build()
@@ -203,13 +203,13 @@ impl<'a, D: Clone + DeviceRef> ComputeBuilder<'a, D> {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct Pipeline<D: DeviceRef> {
+pub struct Pipeline<C: ContextRef> {
     inner: NonZeroU64,
     layout: NonZeroU64,
-    sets: DescriptorSets<D>
+    sets: DescriptorSets<C>
 }
 
-impl<D: DeviceRef> Pipeline<D> {
+impl<C: ContextRef> Pipeline<C> {
     #[inline]
     pub fn id (&self) -> u64 {
         return self.inner.get()
@@ -226,17 +226,17 @@ impl<D: DeviceRef> Pipeline<D> {
     }
 
     #[inline]
-    pub fn sets (&self) -> &DescriptorSets<D> {
+    pub fn sets (&self) -> &DescriptorSets<C> {
         return &self.sets
     }
 
     #[inline]
-    pub fn sets_mut (&mut self) -> &mut DescriptorSets<D> {
+    pub fn sets_mut (&mut self) -> &mut DescriptorSets<C> {
         return &mut self.sets
     }
 
     #[inline]
-    pub fn pool (&self) -> &DescriptorPool<D> {
+    pub fn pool (&self) -> &DescriptorPool<C> {
         return self.sets.pool()
     }
 
@@ -246,7 +246,7 @@ impl<D: DeviceRef> Pipeline<D> {
     }*/
 }
 
-impl<D: DeviceRef> Drop for Pipeline<D> {
+impl<C: ContextRef> Drop for Pipeline<C> {
     #[inline]
     fn drop(&mut self) {
         (Entry::get().destroy_pipeline_layout)(self.device().id(), self.layout(), core::ptr::null());
@@ -369,19 +369,19 @@ bitflags::bitflags! {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-struct PipelineCache<D: DeviceRef> {
+struct PipelineCache<D: ContextRef> {
     inner: NonZeroU64,
     device: D
 }
 
-impl<D: DeviceRef> PipelineCache<D> {
+impl<D: ContextRef> PipelineCache<D> {
     #[inline]
     pub fn id (&self) -> u64 {
         return self.inner.get()
     }
 }
 
-impl<D: DeviceRef> Drop for PipelineCache<D> {
+impl<D: ContextRef> Drop for PipelineCache<D> {
     #[inline]
     fn drop(&mut self) {
         (Entry::get().destroy_pipeline_cache)(self.device.id(), self.id(), core::ptr::null())

@@ -137,9 +137,10 @@ impl<T, A: DeviceAllocator> Buffer<T, A> {
     }
 }
 
-impl<T, A: DeviceAllocator> Buffer<MaybeUninit<T>, A> {
+impl<T, A: DeviceAllocator> Buffer<T, A> {
     #[inline]
-    pub unsafe fn assume_init (self) -> Buffer<T, A> {
+    pub unsafe fn transmute<U> (self) -> Buffer<U, A> {
+        debug_assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<U>());
         let this = ManuallyDrop::new(self);
         return Buffer {
             buffer: this.buffer,
@@ -148,6 +149,18 @@ impl<T, A: DeviceAllocator> Buffer<MaybeUninit<T>, A> {
             alloc: core::ptr::read(&this.alloc),
             _phtm: PhantomData
         }
+    }
+
+    #[inline]
+    pub unsafe fn into_maybe_uninit (self) -> Buffer<MaybeUninit<T>, A> {
+        self.transmute()
+    }
+}
+
+impl<T, A: DeviceAllocator> Buffer<MaybeUninit<T>, A> {
+    #[inline]
+    pub unsafe fn assume_init (self) -> Buffer<T, A> {
+        self.transmute()
     }
 }
 

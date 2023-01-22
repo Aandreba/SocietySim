@@ -1,5 +1,5 @@
 use crate::{
-    device::{Device, DeviceRef},
+    device::{Device},
     error::Error,
     utils::{u64_to_usize, UpQueue},
     Entry, Result,
@@ -64,7 +64,7 @@ impl<M: MemoryMetadata> MemoryPtr<M> {
 }
 
 pub unsafe trait DeviceAllocator {
-    type Device: DeviceRef;
+    type Device: Deref<Target = Device>;
     type Metadata: MemoryMetadata;
 
     fn owned_device(&self) -> Self::Device
@@ -334,7 +334,7 @@ where
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct RawInner<D>(pub D);
 
-unsafe impl<D: DeviceRef> DeviceAllocator for RawInner<D> {
+unsafe impl<D: Deref<Target = Device>> DeviceAllocator for RawInner<D> {
     type Device = D;
     type Metadata = RawInfo;
 
@@ -463,7 +463,7 @@ unsafe impl<D: DeviceRef> DeviceAllocator for RawInner<D> {
 }
 
 #[derive(Debug)]
-pub struct Page<D: DeviceRef> {
+pub struct Page<D: Deref<Target = Device>> {
     inner: ManuallyDrop<MemoryPtr<RawInfo>>,
     flags: MemoryFlags,
     ranges: Mutex<Vec<Range<vk::DeviceSize>>>,
@@ -471,7 +471,7 @@ pub struct Page<D: DeviceRef> {
     alloc: RawInner<D>,
 }
 
-impl<D: DeviceRef> Page<D> {
+impl<D: Deref<Target = Device>> Page<D> {
     #[inline]
     pub fn new(device: D, size: vk::DeviceSize, flags: MemoryFlags) -> Result<Self> {
         let raw = RawInner(device);
@@ -575,7 +575,7 @@ impl<D: DeviceRef> Page<D> {
     }
 }
 
-unsafe impl<D: DeviceRef> DeviceAllocator for Page<D> {
+unsafe impl<D: Deref<Target = Device>> DeviceAllocator for Page<D> {
     type Device = D;
     type Metadata = PageInfo;
 
@@ -711,7 +711,7 @@ unsafe impl<D: DeviceRef> DeviceAllocator for Page<D> {
     }
 }
 
-impl<D: DeviceRef> Drop for Page<D> {
+impl<D: Deref<Target = Device>> Drop for Page<D> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
@@ -739,13 +739,13 @@ impl Deref for StandardDevice {
 unsafe impl Send for StandardDevice where for<'a> &'a Device: Send {}
 unsafe impl Sync for StandardDevice where for<'a> &'a Device: Sync {}
 
-pub struct Book<D: DeviceRef> {
+pub struct Book<D: Deref<Target = Device>> {
     pages: UpQueue<once_cell::sync::OnceCell<Page<StandardDevice>>>,
     device: Pin<D>,
     range: Range<DeviceSize>
 }
 
-impl<D: DeviceRef> Book<D> {
+impl<D: Deref<Target = Device>> Book<D> {
     #[inline]
     pub fn new(device: D, min_size: Option<NonZeroU64>, max_pages: Option<NonZeroUsize>) -> Self
     where
@@ -793,7 +793,7 @@ impl<D: DeviceRef> Book<D> {
     }
 }
 
-unsafe impl<D: DeviceRef> DeviceAllocator for Book<D> {
+unsafe impl<D: Deref<Target = Device>> DeviceAllocator for Book<D> {
     type Device = Pin<D>;
     type Metadata = BookInfo;
 

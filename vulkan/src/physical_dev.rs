@@ -105,7 +105,7 @@ impl PhysicalDevice {
         return unsafe { features.assume_init() };
     }
 
-    pub fn families(self) -> impl Iterator<Item = Family> {
+    pub fn queue_families_raw (self) -> Vec<vk::QueueFamilyProperties> {
         let mut count = 0;
         (Entry::get().get_physical_device_queue_family_properties)(
             self.inner.get(),
@@ -121,10 +121,15 @@ impl PhysicalDevice {
         );
         unsafe { result.set_len(count as usize) }
 
-        return result
+        return result;
+    }
+    
+    #[inline]
+    pub fn queue_families(self) -> impl Iterator<Item = QueueFamily> {
+        return self.queue_families_raw()
             .into_iter()
             .enumerate()
-            .map(move |(idx, inner)| Family {
+            .map(move |(idx, inner)| QueueFamily {
                 idx: idx as u32,
                 inner,
                 parent: self,
@@ -251,20 +256,20 @@ impl Deref for Features {
 }
 
 #[derive(Clone, Copy)]
-pub struct Family {
+pub struct QueueFamily {
     idx: u32,
     inner: vk::QueueFamilyProperties,
     parent: PhysicalDevice,
 }
 
-impl PartialEq for Family {
+impl PartialEq for QueueFamily {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.idx == other.idx && self.parent == other.parent
     }
 }
 
-impl Family {
+impl QueueFamily {
     #[inline]
     pub fn parent(self) -> PhysicalDevice {
         return self.parent;
@@ -276,15 +281,15 @@ impl Family {
     }
 
     #[inline]
-    pub fn queue_flags(&self) -> FamilyQueueFlags {
+    pub fn queue_flags(&self) -> QueueFlags {
         #[cfg(debug_assertions)]
-        return FamilyQueueFlags::from_bits(self.inner.queueFlags).unwrap();
+        return QueueFlags::from_bits(self.inner.queueFlags).unwrap();
         #[cfg(not(debug_assertions))]
-        return unsafe { FamilyQueueFlags::from_bits_unchecked(self.inner.queueFlags) };
+        return unsafe { QueueFlags::from_bits_unchecked(self.inner.queueFlags) };
     }
 }
 
-impl Debug for Family {
+impl Debug for QueueFamily {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Family")
@@ -296,7 +301,7 @@ impl Debug for Family {
 
 bitflags::bitflags! {
     #[repr(transparent)]
-    pub struct FamilyQueueFlags: vk::QueueFlags {
+    pub struct QueueFlags: vk::QueueFlags {
         /// Queue supports graphics operations
         const GRAPHICS = vk::QUEUE_GRAPHICS_BIT;
         /// Queue supports compute operations

@@ -83,7 +83,7 @@ impl<T: ?Sized, D: DeviceRef> SharedPtr<T, D> {
 fn shared_ptr () -> anyhow::Result<()> {
     let _ = unsafe {
         Entry::builder(1, 1, 0)
-            .extensions([cstr!("VK_EXT_external_memory_host")])
+            .extensions([cstr!("VK_KHR_external_memory"), cstr!("VK_EXT_external_memory_host")])
             .build()?
     };
 

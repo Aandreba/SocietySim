@@ -8,7 +8,7 @@ pub struct Context<D: DeviceRef> {
 impl<D: DeviceRef> Context<D> {
     #[inline]
     pub fn new (device: D, queue: Queue) -> Result<Self> {
-        let family = device.physical().families().next().unwrap();
+        let family = device.physical().queue_families().next().unwrap();
         let pool = CommandPool::new(
             device,
             family,

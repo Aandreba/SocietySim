@@ -29,16 +29,15 @@ pub(crate) extern crate vulkan_bindings as vk;
 pub mod error;
 pub mod physical_dev;
 pub mod device;
-pub mod queue;
 pub mod shader;
 pub mod buffer;
 pub mod alloc;
 pub mod utils;
 pub mod pipeline;
 pub mod descriptor;
-pub mod pool;
 pub mod sync;
-pub mod shared;
+pub mod context;
+//pub mod shared;
 
 //flat_mod! { alloc }
 
@@ -114,6 +113,7 @@ proc::entry! {
     "vkGetFenceStatus",
     "vkQueueBindSparse",
     "vkGetMemoryHostPointerPropertiesEXT",
+    "vkCmdCopyBuffer",
     // Destructors
     "vkDestroyInstance",
     "vkDestroyDevice",

@@ -1,21 +1,21 @@
 use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ops::{Deref, DerefMut}};
-use crate::{utils::usize_to_u32, Result, device::{Device, DeviceRef}, Entry, shader::Shader, buffer::Buffer, alloc::DeviceAllocator};
+use crate::{utils::usize_to_u32, Result, device::{Device}, Entry, shader::Shader, buffer::Buffer, alloc::DeviceAllocator, context::{ContextRef}};
 
-pub struct Builder<D> {
+pub struct Builder<C> {
     pub(crate) flags: DescriptorPoolFlags,
     pub(crate) capacity: u32,
     pub(crate) pool_sizes: Vec<vk::DescriptorPoolSize>,
-    pub(crate) device: D
+    pub(crate) context: C
 }
 
-impl<D: DeviceRef> Builder<D> {
+impl<C: ContextRef> Builder<C> {
     #[inline]
-    pub fn new (device: D, capacity: u32) -> Self {
+    pub fn new (context: C, capacity: u32) -> Self {
         return Self {
             flags: DescriptorPoolFlags::empty(),
             capacity,
             pool_sizes: Vec::new(),
-            device,
+            context,
         }
     }
 
@@ -32,24 +32,24 @@ impl<D: DeviceRef> Builder<D> {
     }
 
     #[inline]
-    pub fn build (self) -> Result<DescriptorPool<D>> {
+    pub fn build (self) -> Result<DescriptorPool<C>> {
         return DescriptorPool::new(self.device, self.capacity, self.flags, &self.pool_sizes)
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct DescriptorPool<D: DeviceRef> {
+pub struct DescriptorPool<C: ContextRef> {
     inner: NonZeroU64,
-    device: D
+    context: C
 }
 
-impl<D: DeviceRef> DescriptorPool<D> {
+impl<C: ContextRef> DescriptorPool<C> {
     #[inline]
-    pub fn builder (device: D, capacity: u32) -> Builder<D> {
-        return Builder::new(device, capacity)
+    pub fn builder (context: C, capacity: u32) -> Builder<C> {
+        return Builder::new(context, capacity)
     }
 
-    pub fn new (device: D, capacity: u32, flags: DescriptorPoolFlags, pool_sizes: &[vk::DescriptorPoolSize]) -> Result<Self> {
+    pub fn new (context: C, capacity: u32, flags: DescriptorPoolFlags, pool_sizes: &[vk::DescriptorPoolSize]) -> Result<Self> {
         let info = vk::DescriptorPoolCreateInfo {
             sType: vk::STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             pNext: core::ptr::null(),
@@ -62,7 +62,7 @@ impl<D: DeviceRef> DescriptorPool<D> {
         let mut inner = 0;
         tri! {
             (Entry::get().create_descriptor_pool)(
-                device.id(),
+                context.device().id(),
                 addr_of!(info),
                 core::ptr::null(),
                 addr_of_mut!(inner)
@@ -70,7 +70,7 @@ impl<D: DeviceRef> DescriptorPool<D> {
         }
         
         if let Some(inner) = NonZeroU64::new(inner) {
-            return Ok(Self { inner, device })
+            return Ok(Self { inner, context })
         }
         return Err(vk::ERROR_UNKNOWN.into())
     }
@@ -82,25 +82,25 @@ impl<D: DeviceRef> DescriptorPool<D> {
 
     #[inline]
     pub fn device (&self) -> &Device {
-        return self.device.deref()
+        return self.context.device()
     }
 }
 
-impl<D: DeviceRef> Drop for DescriptorPool<D> {
+impl<C: ContextRef> Drop for DescriptorPool<C> {
     #[inline]
     fn drop(&mut self) {
-        (Entry::get().destroy_descriptor_pool)(self.device.id(), self.id(), core::ptr::null())
+        (Entry::get().destroy_descriptor_pool)(self.device().id(), self.id(), core::ptr::null())
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct DescriptorSets<D: DeviceRef> {
+pub struct DescriptorSets<C: ContextRef> {
     inner: Box<[DescriptorSet]>,
-    pool: DescriptorPool<D>
+    pool: DescriptorPool<C>
 }
 
-impl<D: DeviceRef> DescriptorSets<D> {
-    pub fn new<U: DeviceRef> (pool: DescriptorPool<D>, shaders: &[Shader<U>]) -> Result<Self> {
+impl<C: ContextRef> DescriptorSets<C> {
+    pub fn new<U: ContextRef> (pool: DescriptorPool<C>, shaders: &[Shader<U>]) -> Result<Self> {
         let layouts = shaders.iter().map(Shader::layout).collect::<Vec<_>>();
         let info = vk::DescriptorSetAllocateInfo {
             sType: vk::STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -129,7 +129,7 @@ impl<D: DeviceRef> DescriptorSets<D> {
     }
 
     #[inline]
-    pub fn pool (&self) -> &DescriptorPool<D> {
+    pub fn pool (&self) -> &DescriptorPool<C> {
         return &self.pool
     }
 
@@ -139,7 +139,7 @@ impl<D: DeviceRef> DescriptorSets<D> {
     }
 }
 
-impl<D: DeviceRef> DescriptorSets<D> {
+impl<C: ContextRef> DescriptorSets<C> {
     pub fn update<'b> (&mut self, write: impl IntoIterator<Item = &'b WriteDescriptorSet>) {
         let write = write.into_iter()
             .zip(0u32..)
@@ -160,7 +160,7 @@ impl<D: DeviceRef> DescriptorSets<D> {
     }
 }
 
-impl<D: DeviceRef> Deref for DescriptorSets<D> {
+impl<C: ContextRef> Deref for DescriptorSets<C> {
     type Target = [DescriptorSet];
 
     #[inline]
@@ -169,14 +169,14 @@ impl<D: DeviceRef> Deref for DescriptorSets<D> {
     }
 }
 
-impl<D: DeviceRef> DerefMut for DescriptorSets<D> {
+impl<C: ContextRef> DerefMut for DescriptorSets<C> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<D: DeviceRef> Drop for DescriptorSets<D> {
+impl<C: ContextRef> Drop for DescriptorSets<C> {
     #[inline]
     fn drop(&mut self) {
         let result = (Entry::get().free_descriptor_sets)(

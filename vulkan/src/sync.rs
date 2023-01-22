@@ -1,8 +1,6 @@
 use crate::{
-    device::{Device, DeviceRef},
-    pool::CommandPool,
-    queue::Queue,
-    Entry, Result,
+    device::{Device},
+    Entry, Result, context::ContextRef,
 };
 use std::{
     num::NonZeroU64,
@@ -11,13 +9,13 @@ use std::{
 };
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct Fence<D: DeviceRef> {
+pub struct Fence<C: ContextRef> {
     inner: NonZeroU64,
-    parent: D,
+    parent: C,
 }
 
-impl<D: DeviceRef> Fence<D> {
-    pub fn new(parent: D, flags: FenceFlags) -> Result<Self> {
+impl<C: ContextRef> Fence<C> {
+    pub fn new(parent: C, flags: FenceFlags) -> Result<Self> {
         let info = vk::FenceCreateInfo {
             sType: vk::STRUCTURE_TYPE_FENCE_CREATE_INFO,
             pNext: core::ptr::null(),
@@ -51,14 +49,6 @@ impl<D: DeviceRef> Fence<D> {
     }
 
     #[inline]
-    pub fn owned_device(&self) -> D
-    where
-        D: Clone,
-    {
-        return self.parent.clone();
-    }
-
-    #[inline]
     pub fn status(&self) -> Result<bool> {
         return match (Entry::get().get_fence_status)(self.device().id(), self.id()) {
             vk::SUCCESS => Ok(true),
@@ -89,18 +79,18 @@ impl<D: DeviceRef> Fence<D> {
         return Ok(());
     }
 
-    #[inline]
-    pub fn bind_to<'b, P: DeviceRef, S: DeviceRef>(
-        &mut self,
-        pool: &'b mut CommandPool<P>,
-        queue: &mut Queue,
-        semaphores: Option<&'b [Semaphore<S>]>,
-    ) -> Result<()> {
-        queue
-            .submitter(Some(self))
-            .add(pool, 0..1, semaphores)
-            .submit()
-    }
+    // #[inline]
+    // pub fn bind_to<'b, P: ContextRef, S: ContextRef>(
+    //     &mut self,
+    //     pool: &'b mut CommandPool<P>,
+    //     queue: &mut Queue,
+    //     semaphores: Option<&'b [Semaphore<S>]>,
+    // ) -> Result<()> {
+    //     queue
+    //         .submitter(Some(self))
+    //         .add(pool, 0..1, semaphores)
+    //         .submit()
+    // }
 
     #[inline]
     pub fn wait(&self, timeout: Option<Duration>) -> Result<bool> {
@@ -125,20 +115,20 @@ impl<D: DeviceRef> Fence<D> {
         };
     }
 
-    #[inline]
-    pub fn bind_and_wait<'a, P: DeviceRef, S: DeviceRef>(
-        &mut self,
-        pool: &'a mut CommandPool<P>,
-        queue: &mut Queue,
-        semaphores: Option<&'a [Semaphore<S>]>,
-        timeout: Option<Duration>,
-    ) -> Result<bool> {
-        self.bind_to(pool, queue, semaphores)?;
-        return self.wait(timeout);
-    }
+    // #[inline]
+    // pub fn bind_and_wait<'a, P: ContextRef, S: ContextRef>(
+    //     &mut self,
+    //     pool: &'a mut CommandPool<P>,
+    //     queue: &mut Queue,
+    //     semaphores: Option<&'a [Semaphore<S>]>,
+    //     timeout: Option<Duration>,
+    // ) -> Result<bool> {
+    //     self.bind_to(pool, queue, semaphores)?;
+    //     return self.wait(timeout);
+    // }
 }
 
-impl<D: DeviceRef> Drop for Fence<D> {
+impl<D: ContextRef> Drop for Fence<D> {
     #[inline]
     fn drop(&mut self) {
         (Entry::get().destroy_fence)(self.parent.id(), self.id(), core::ptr::null())
@@ -146,12 +136,12 @@ impl<D: DeviceRef> Drop for Fence<D> {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct Semaphore<D: DeviceRef> {
+pub struct Semaphore<D: ContextRef> {
     inner: NonZeroU64,
     parent: D,
 }
 
-impl<D: DeviceRef> Semaphore<D> {
+impl<D: ContextRef> Semaphore<D> {
     #[inline]
     pub fn new(parent: D) -> Result<Self> {
         let info = vk::SemaphoreCreateInfo {
@@ -182,7 +172,7 @@ impl<D: DeviceRef> Semaphore<D> {
     }
 }
 
-impl<D: DeviceRef> Drop for Semaphore<D> {
+impl<D: ContextRef> Drop for Semaphore<D> {
     #[inline]
     fn drop(&mut self) {
         (Entry::get().destroy_semaphore)(self.parent.id(), self.id(), core::ptr::null())

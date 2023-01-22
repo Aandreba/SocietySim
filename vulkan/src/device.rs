@@ -1,7 +1,5 @@
-use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of}, hash::Hash, ffi::CStr, ops::Deref};
-use crate::{Result, Entry, queue::{Queue}, physical_dev::{PhysicalDevice, Family}, utils::usize_to_u32};
-
-pub trait DeviceRef = Deref<Target = Device>;
+use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of, NonNull}, hash::Hash, ffi::CStr, pin::Pin};
+use crate::{Result, Entry, physical_dev::{PhysicalDevice, QueueFamily}, utils::usize_to_u32};
 
 #[derive(Debug)]
 pub struct Device {
@@ -53,6 +51,7 @@ impl Drop for Device {
 pub struct Builder<'a> {
     inner: vk::DeviceCreateInfo,
     parent: PhysicalDevice,
+    queue_infos: Pin<Vec<vk::DeviceQueueCreateInfo>>,
     _phtm: PhantomData<(&'a vk::PhysicalDeviceFeatures, &'a CStr)>
 }
 
@@ -63,8 +62,8 @@ impl<'a> Builder<'a> {
                 sType: vk::STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                 pNext: core::ptr::null_mut(),
                 flags: 0,
-                queueCreateInfoCount: 0,
-                pQueueCreateInfos: core::ptr::null_mut(),
+                queueCreateInfoCount: 0, // later
+                pQueueCreateInfos: core::ptr::null_mut(), // later
                 enabledLayerCount: 0, // depr
                 ppEnabledLayerNames: core::ptr::null_mut(), // depr
                 enabledExtensionCount: 0,
@@ -72,6 +71,7 @@ impl<'a> Builder<'a> {
                 pEnabledFeatures: Box::into_raw(parent.features()).cast(),
             },
             parent,
+            queue_infos: Pin::new(Vec::new()),
             _phtm: PhantomData
         }
     }
@@ -104,8 +104,11 @@ impl<'a> Builder<'a> {
         self
     }
 
-    pub fn build (self) -> Result<(Device, Vec<Queue>)> {
+    pub fn build (mut self) -> Result<Device> {
         let entry = Entry::get();
+
+        self.inner.queueCreateInfoCount = usize_to_u32(self.queue_infos.len());
+        self.inner.pQueueCreateInfos = self.queue_infos.as_ptr();
 
         let mut result: vk::Device = 0;
         tri! {
@@ -113,32 +116,7 @@ impl<'a> Builder<'a> {
         };
 
         if let Some(inner) = NonZeroU64::new(result) {
-            let mut queues = Vec::new();
-            if self.inner.queueCreateInfoCount > 0 && !self.inner.pQueueCreateInfos.is_null() {
-                let infos = unsafe {
-                    core::slice::from_raw_parts(
-                        self.inner.pQueueCreateInfos,
-                        self.inner.queueCreateInfoCount as usize
-                    )
-                };
-
-                for info in infos {
-                    queues.reserve(info.queueCount as usize);
-
-                    for i in 0..info.queueCount {
-                        let mut queue = 0;
-                        (entry.get_device_queue)(inner.get(), info.queueFamilyIndex, i, addr_of_mut!(queue));
-
-                        if let Some(inner) = NonZeroU64::new(queue) {
-                            queues.push(Queue { inner, index: i });
-                        } else {
-                            return Err(vk::ERROR_UNKNOWN.into())
-                        }
-                    }
-                }
-            }
-
-            return Ok((Device { inner, parent: self.parent }, queues))
+            return Ok(Device { inner, parent: self.parent })
         }
 
         return Err(vk::ERROR_UNKNOWN.into())
@@ -149,10 +127,6 @@ impl Drop for Builder<'_> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
-            if !self.inner.pQueueCreateInfos.is_null() {
-                let _ = Box::from_raw(self.inner.pQueueCreateInfos.cast_mut());
-            }
-
             if self.inner.enabledExtensionCount > 0 && !self.inner.ppEnabledExtensionNames.is_null() {
                 let _ = Box::from_raw(core::slice::from_raw_parts_mut(
                     self.inner.ppEnabledExtensionNames.cast_mut(),
@@ -173,55 +147,64 @@ bitflags::bitflags! {
 }
 
 pub struct QueueBuilder<'a> {
-    inner: Box<vk::DeviceQueueCreateInfo>,
+    inner: NonNull<vk::DeviceQueueCreateInfo>,
     parent: Builder<'a>,
     _phtm: PhantomData<&'a [f32]>
 }
 
 impl<'a> QueueBuilder<'a> {
     #[inline]
-    pub fn new (parent: Builder<'a>, priorities: &'a [f32]) -> Self {
+    pub fn new (mut parent: Builder<'a>, priorities: &'a [f32]) -> Self {
         debug_assert!(f32::abs(priorities.iter().sum::<f32>() - 1f32) < f32::EPSILON);
+        parent.queue_infos.push(vk::DeviceQueueCreateInfo {
+            sType: vk::STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            pNext: core::ptr::null_mut(),
+            flags: 0,
+            queueFamilyIndex: 0,
+            queueCount: usize_to_u32(priorities.len()),
+            pQueuePriorities: priorities.as_ptr(),
+        });
+        
         return Self {
-            inner: Box::new(vk::DeviceQueueCreateInfo {
-                sType: vk::STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                pNext: core::ptr::null_mut(),
-                flags: 0,
-                queueFamilyIndex: 0,
-                queueCount: usize_to_u32(priorities.len()),
-                pQueuePriorities: priorities.as_ptr(),
-            }),
+            inner: unsafe { NonNull::new_unchecked(parent.queue_infos.last_mut().unwrap_unchecked()) },
             parent,
             _phtm: PhantomData
         }
     }
 
     #[inline]
-    pub fn family (mut self, family: &Family) -> Result<Self> {
+    fn inner (&mut self) -> &mut vk::DeviceQueueCreateInfo {
+        unsafe { self.inner.as_mut() }
+    }
+
+    #[inline]
+    pub fn family (mut self, family: &QueueFamily) -> Result<Self> {
         if family.parent() != self.parent.parent {
             return Err(vk::ERROR_UNKNOWN.into())
         }
 
-        self.inner.queueFamilyIndex = family.idx();
+        self.inner().queueFamilyIndex = family.idx();
         return Ok(self)
     }
 
     #[inline]
+    pub(crate) fn family_index (mut self, family: u32) -> Result<Self> {
+        self.inner().queueFamilyIndex = family;
+        return Ok(self)
+    }
+
+
+    #[inline]
     pub fn priorities (mut self, p: &'a [f32]) -> Result<Self> {
-        if p.len() != self.inner.queueCount as usize { 
+        if p.len() != self.inner().queueCount as usize { 
             return Err(vk::ERROR_INITIALIZATION_FAILED.into());
         }
-        self.inner.pQueuePriorities = p.as_ptr();
+        self.inner().pQueuePriorities = p.as_ptr();
         Ok(self)
     }
 
     #[inline]
-    pub fn build (mut self) -> Builder<'a> {
-        self.parent.inner.queueCreateInfoCount = 1;
-        let prev = core::mem::replace(&mut self.parent.inner.pQueueCreateInfos, Box::into_raw(self.inner));
-        if !prev.is_null() {
-            let _ = unsafe { Box::from_raw(prev.cast_mut()) };
-        }
+    pub fn build (self) -> Builder<'a> {
         self.parent
     }
 }
