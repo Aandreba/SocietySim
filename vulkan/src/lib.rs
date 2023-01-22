@@ -60,7 +60,7 @@ const LIB_PATH: &str = "libvulkan.so.1";
 #[cfg(target_os = "android")]
 const LIB_PATH: &str = "libvulkan.so";
 #[cfg(any(target_os = "macos", target_os = "ios"))]
-const LIB_PATH: &str = "libvulkan.dylib";
+const LIB_PATH: &str = "libMoltenVK.dylib";
 
 static mut CURRENT_ENTRY: Option<Entry> = None;
 const ENTRY_POINT: &[u8] = b"vkGetInstanceProcAddr\0";
