@@ -20,67 +20,67 @@ struct _17
     _16 _m2;
 };
 
-struct _22
+struct _23
 {
-    uint4 _m0;
+    uint _m0[4];
 };
 
-struct _23
+struct _24
 {
     _17 _m0[1];
 };
 
-kernel void generate_people(constant uint* spvBufferSizeConstants [[buffer(25)]], constant _22& _18 [[buffer(0)]], device _23& _19 [[buffer(1)]], uint3 gl_GlobalInvocationID [[thread_position_in_grid]])
+kernel void generate_people(constant uint* spvBufferSizeConstants [[buffer(25)]], constant _23& _18 [[buffer(0)]], device _24& _19 [[buffer(1)]], uint3 gl_GlobalInvocationID [[thread_position_in_grid]])
 {
-    bool _325 = false;
+    bool _326 = false;
     constant uint& _19BufferSize = spvBufferSizeConstants[1];
-    uint _68;
-    _17 _304;
+    uint _69;
+    _17 _305;
     do
     {
-        _68 = gl_GlobalInvocationID.x;
-        float2 _73 = float2(12.98980045318603515625, 78.233001708984375) * float2(float(_68));
-        float _331 = _73.x + _73.y;
-        float _327 = _331;
-        float _78 = fract(sin(_331) * 43758.546875) * 4294967296.0;
-        uint _85 = (_78 > 4294967040.0) ? 4294967295u : ((isunordered(_78, 0.0) || _78 < 0.0) ? 0u : uint(_78));
-        uint _87 = _18._m0.x + _85;
-        uint _98 = _18._m0.y + _85;
-        uint _120 = _18._m0.w + _85;
-        uint _130 = _87 + _120;
-        uint _141 = (_18._m0.z + _85) ^ _87;
-        uint _142 = _120 ^ _98;
-        uint _143 = _98 ^ _141;
-        uint _144 = _87 ^ _142;
-        uint _156 = _144 + _142;
-        uint _167 = (_141 ^ (_98 << uint(9))) ^ _144;
-        uint _168 = _142 ^ _143;
-        uint _169 = _143 ^ _167;
+        _69 = gl_GlobalInvocationID.x;
+        float2 _78 = float2(12.98980045318603515625, 78.233001708984375) * float2(float(_69));
+        float _332 = _78.x + _78.y;
+        float _328 = _332;
+        float _83 = fract(sin(_332) * 43758.546875) * 4294967296.0;
+        uint _90 = (_83 > 4294967040.0) ? 4294967295u : ((isunordered(_83, 0.0) || _83 < 0.0) ? 0u : uint(_83));
+        uint _91 = _18._m0[0] + _90;
+        uint _101 = _18._m0[1] + _90;
+        uint _121 = _18._m0[3] + _90;
+        uint _131 = _91 + _121;
+        uint _142 = (_18._m0[2] + _90) ^ _91;
+        uint _143 = _121 ^ _101;
+        uint _144 = _101 ^ _142;
+        uint _145 = _91 ^ _143;
+        uint _157 = _145 + _143;
+        uint _168 = (_142 ^ (_101 << uint(9))) ^ _145;
+        uint _169 = _143 ^ _144;
         uint _170 = _144 ^ _168;
-        uint _181 = _170 + _168;
-        uint _192 = (_167 ^ (_143 << uint(9))) ^ _170;
-        uint _193 = _168 ^ _169;
-        uint _194 = _169 ^ _192;
+        uint _171 = _145 ^ _169;
+        uint _182 = _171 + _169;
+        uint _193 = (_168 ^ (_144 << uint(9))) ^ _171;
+        uint _194 = _169 ^ _170;
         uint _195 = _170 ^ _193;
-        uint _205 = _195 + _193;
-        uint _216 = (_192 ^ (_169 << uint(9))) ^ _195;
-        uint _217 = _193 ^ _194;
-        uint _218 = _194 ^ _216;
+        uint _196 = _171 ^ _194;
+        uint _206 = _196 + _194;
+        uint _217 = (_193 ^ (_170 << uint(9))) ^ _196;
+        uint _218 = _194 ^ _195;
         uint _219 = _195 ^ _217;
-        uint _229 = _219 + _217;
-        uint _240 = (_216 ^ (_194 << uint(9))) ^ _219;
-        uint _241 = _217 ^ _218;
-        uint _242 = _218 ^ _240;
+        uint _220 = _196 ^ _218;
+        uint _230 = _220 + _218;
+        uint _241 = (_217 ^ (_195 << uint(9))) ^ _220;
+        uint _242 = _218 ^ _219;
         uint _243 = _219 ^ _241;
-        uint _253 = _243 + _241;
-        uint _263 = _241 ^ _242;
-        uint _265 = _243 ^ _263;
-        uint _274 = _265 + _263;
-        uint _283 = _263 ^ (_242 ^ ((_240 ^ (_218 << uint(9))) ^ _243));
-        uint _284 = _265 ^ _283;
-        uint _293 = _284 + _283;
-        _304 = _17{ (((_130 + _87) & 1u) == 1u) ? uchar(1) : uchar(0), ushort(ushort(_156 + _144) % ushort(36500)), _16{ uchar(_181 + _170), uchar(_205 + _195), uchar(_229 + _219), uchar(_253 + _243), uchar(_274 + _265), uchar(_293 + _284) } };
-        if (_68 < ((_19BufferSize - 0) / 10))
+        uint _244 = _220 ^ _242;
+        uint _254 = _244 + _242;
+        uint _264 = _242 ^ _243;
+        uint _266 = _244 ^ _264;
+        uint _275 = _266 + _264;
+        uint _284 = _264 ^ (_243 ^ ((_241 ^ (_219 << uint(9))) ^ _244));
+        uint _285 = _266 ^ _284;
+        uint _294 = _285 + _284;
+        _305 = _17{ (((_131 + _91) & 1u) == 1u) ? uchar(1) : uchar(0), ushort(ushort(_157 + _145) % ushort(36500)), _16{ uchar(_182 + _171), uchar(_206 + _196), uchar(_230 + _220), uchar(_254 + _244), uchar(_275 + _266), uchar(_294 + _285) } };
+        if (_69 < ((_19BufferSize - 0) / 10))
         {
             break;
         }
@@ -93,7 +93,7 @@ kernel void generate_people(constant uint* spvBufferSizeConstants [[buffer(25)]]
         }
         break; // unreachable workaround
     } while(false);
-    _19._m0[_68] = _304;
-    _325 = true;
+    _19._m0[_69] = _305;
+    _326 = true;
 }
 

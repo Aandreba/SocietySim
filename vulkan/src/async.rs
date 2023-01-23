@@ -1,7 +1,7 @@
 use crate::{
     context::{
         event::{consumer::EventConsumer, Event},
-        ContextRef,
+        ContextRef, Context,
     },
     sync::Fence,
     utils::usize_to_u32,
@@ -13,12 +13,12 @@ use std::{
     mem::ManuallyDrop,
     sync::{Arc, Weak},
     task::Poll,
-    time::{Duration, Instant},
+    time::{Duration, Instant}, pin::Pin, ops::Deref,
 };
 use utils_atomics::FillQueue;
 
-struct Node<C: ContextRef> {
-    fence: Fence<C>,
+struct Node {
+    fence: Fence<NodeContext>,
     budget: u64, // in nanos
     flag: utils_atomics::flag::mpmc::AsyncFlag,
     result: Weak<vk::Result>,
@@ -28,26 +28,39 @@ pub struct EventRuntime<C: ContextRef> {
     handle: EventRuntimeHandle<C>,
 }
 
-impl<C: ContextRef> EventRuntime<C> {
+impl<C: Clone + ContextRef> EventRuntime<C> {
     #[inline]
-    pub fn new () -> Self {
+    pub fn new (context: C) -> Self where C: Unpin {
+        return Self::new_pinned(Pin::new(context))
+    }
+
+    #[inline]
+    pub unsafe fn new_unchecked (context: C) -> Self  {
+        return Self::new_pinned(Pin::new_unchecked(context))
+    }
+    
+    #[inline]
+    pub fn new_pinned (context: Pin<C>) -> Self {
         return Self {
             handle: EventRuntimeHandle {
-                queue: Arc::new(FillQueue::new())
+                queue: Arc::new(FillQueue::new()),
+                context
             }
         }
     }
 
     #[inline]
-    pub fn handle(&self) -> EventRuntimeHandle<C> {
+    pub fn handle(&self) -> EventRuntimeHandle<C> where C: Clone {
         self.handle.clone()
     }
 
-    pub fn run_to_end (self) {
+    pub fn run_to_end (&mut self) {
         struct Metadata {
             budget: u64, // in nanos
             flag: utils_atomics::flag::mpmc::AsyncFlag,
             result: Weak<vk::Result>, // `Weak` enables abortion detection
+            #[cfg(debug_assertions)]
+            checks: u64
         }
 
         struct InnerEntry {
@@ -55,82 +68,38 @@ impl<C: ContextRef> EventRuntime<C> {
             data: Vec<Metadata>,
         }
 
-        struct Map<C: ContextRef>(Vec<(C, InnerEntry)>);
-        impl<C: ContextRef> Drop for Map<C> {
-            #[inline]
-            fn drop(&mut self) {
-                for (context, mut entry) in self.0.drain(..) {
-                    for fence in entry.fences.drain(..) {
-                        (Entry::get().destroy_fence)(
-                            context.device().id(),
-                            fence,
-                            core::ptr::null(),
-                        );
-                    }
-                }
-            }
-        }
-
-        let mut recv = Some(Arc::downgrade(&self.handle.queue));
-        let mut contexts = Map(Vec::<(C, InnerEntry)>::new());
-        drop(self.handle);
+        let mut entries = Vec::<InnerEntry>::new();
+        let context = self.handle.context.clone();
 
         loop {
             // Check if receiver is still open
-            if let Some(ref this_recv) = recv {
-                // Check if receiver is still open
-                if let Some(this_recv) = this_recv.upgrade() {
-                    for Node {
-                        fence,
+            for Node {
+                fence,
+                budget,
+                flag,
+                result,
+            } in self.queue.chop()
+            {
+                let fence = ManuallyDrop::new(fence);
+                let fence = fence.id();
+
+                entries.push(InnerEntry {
+                    fences: vec![fence],
+                    data: vec![Metadata {
                         budget,
                         flag,
                         result,
-                    } in this_recv.chop()
-                    {
-                        let fence = ManuallyDrop::new(fence);
-                        let context = unsafe { core::ptr::read(&fence.context) };
-                        let fence = fence.id();
-
-                        // Add to device-fences map
-                        let mut meta = Some(Metadata {
-                            budget,
-                            flag,
-                            result,
-                        });
-
-                        for (key, entry) in contexts.0.iter_mut() {
-                            if key.device() == context.device() {
-                                entry.fences.push(fence);
-                                unsafe {
-                                    entry
-                                        .data
-                                        .push(core::mem::take(&mut meta).unwrap_unchecked())
-                                };
-                                break;
-                            }
-                        }
-
-                        // If the device wasn't found, add new entry
-                        if let Some(meta) = meta {
-                            contexts.0.push((
-                                context,
-                                InnerEntry {
-                                    fences: vec![fence],
-                                    data: vec![meta],
-                                },
-                            ));
-                        }
-                    }
-                } else if contexts.0.iter().all(|(_, entry)| entry.fences.is_empty()) {
-                    break;
-                } else {
-                    recv = None
-                }
-            } else if contexts.0.iter().all(|(_, entry)| entry.fences.is_empty()) {
-                break;
+                        #[cfg(debug_assertions)] checks: 0
+                    }],
+                });
             }
 
-            for (context, entry) in contexts.0.iter_mut() {
+            // Check if receiver is still open
+            if Arc::strong_count(&self.queue) == 1 && entries.iter().all(|entry| entry.fences.is_empty()) {
+                break
+            }
+
+            for entry in entries.iter_mut() {
                 if let Some(mut budget) = entry.data.iter().map(|x| x.budget).max() {
                     // Run until budget is consumed
                     loop {
@@ -145,7 +114,13 @@ impl<C: ContextRef> EventRuntime<C> {
                         let elapsed = now.elapsed();
 
                         match wait {
-                            vk::TIMEOUT => break,
+                            vk::TIMEOUT => {
+                                #[cfg(debug_assertions)]
+                                for data in entry.data.iter_mut() {
+                                    data.checks += 1
+                                }
+                                break
+                            },
                             _ => {
                                 // Find and treat with all completed/errored fences
                                 let mut i = 0;
@@ -160,12 +135,21 @@ impl<C: ContextRef> EventRuntime<C> {
                                             context.device().id(),
                                             fence,
                                         ) {
-                                            vk::NOT_READY => i += 1,
+                                            vk::NOT_READY => {
+                                                #[cfg(debug_assertions)]
+                                                { entry.data[i].checks += 1 };
+                                                i += 1
+                                            },
+
                                             r => unsafe {
                                                 // IMPL: Although the order is not mainteined, the correlation between the
                                                 // indices of both vectors is, so this is sound
                                                 let fence = entry.fences.swap_remove(i);
                                                 let data = entry.data.swap_remove(i);
+
+                                                // Print number of checks
+                                                #[cfg(debug_assertions)]
+                                                println!("fence {fence} has been checked {} times", data.checks);
 
                                                 // Destroy fence
                                                 (Entry::get().destroy_fence)(
@@ -213,9 +197,19 @@ impl<C: ContextRef> EventRuntime<C> {
     }
 }
 
+impl<C: ContextRef> Deref for EventRuntime<C> {
+    type Target = EventRuntimeHandle<C>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.handle
+    }
+}
+
 /// Handle to interect with a running [`FenceRuntime`]
 pub struct EventRuntimeHandle<C: ContextRef> {
-    queue: Arc<FillQueue<Node<C>>>
+    queue: Arc<FillQueue<Node>>,
+    context: Pin<C>
 }
 
 impl<C: ContextRef> EventRuntimeHandle<C> {
@@ -226,30 +220,40 @@ impl<C: ContextRef> EventRuntimeHandle<C> {
         &self,
         event: Event<C, F>,
         budget: Duration,
-    ) -> EventWait<F> {
+    ) -> Result<EventWait<F>> {
+        if event.device() != self.context.device() {
+            #[cfg(debug_assertions)]
+            eprintln!("{:#?} is should be the same device as {:#?}", event.device(), self.context.device());
+            return Err(vk::ERROR_DEVICE_LOST.into())
+        }
+
         let budget = Duration::min(budget, Self::MAX_BUDGET);
         let result = Arc::new(vk::ERROR_UNKNOWN); // protect against unexpected panics by returning ERROR_UNKNOWN if we check the result before it's set
         let (flag, sub) = utils_atomics::flag::mpmc::async_flag();
         self.queue.push(Node {
-            fence: event.fence,
+            fence: Fence {
+                inner: event.fence.inner,
+                context: NodeContext(&self.context as &Context),
+            },
             budget: budget.as_nanos() as u64,
             result: Arc::downgrade(&result),
             flag,
         });
 
-        return EventWait {
+        return Ok(EventWait {
             f: Some(event.c),
             flag: sub,
             result,
-        };
+        });
     }
 }
 
-impl<C: ContextRef> Clone for EventRuntimeHandle<C> {
+impl<C: Clone + ContextRef> Clone for EventRuntimeHandle<C> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
             queue: self.queue.clone(),
+            context: self.context.clone()
         }
     }
 }
@@ -284,3 +288,17 @@ impl<F: EventConsumer> Future for EventWait<F> {
         return Poll::Pending;
     }
 }
+
+struct NodeContext (*const Context);
+
+impl Deref for NodeContext {
+    type Target = Context;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.0 }
+    }
+}
+
+unsafe impl Send for NodeContext where for<'a> &'a Context: Send {}
+unsafe impl Sync for NodeContext where for<'a> &'a Context: Sync {}

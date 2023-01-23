@@ -1,21 +1,29 @@
-use std::{mem::MaybeUninit, time::Duration};
-use rand::{distributions::OpenClosed01, thread_rng, Rng};
-use shared::{person::Person};
+use rand::{random};
+use shared::person::Person;
+use std::{mem::MaybeUninit};
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags},
-    buffer::{Buffer, UsageFlags, BufferFlags},
+    buffer::{Buffer, BufferFlags, UsageFlags},
+    context::{ContextRef, event::{consumer::EventConsumer, Event}, Context},
+    cstr,
+    descriptor::{DescriptorSet, DescriptorType},
+    include_spv,
     pipeline::{ComputeBuilder, Pipeline},
-    Result, descriptor::{DescriptorSet, DescriptorType}, utils::u64_to_u32, shader::ShaderStages, cstr, sync::{Fence, FenceFlags}, include_spv, context::ContextRef,
+    utils::u64_to_u32,
+    Result,
 };
 
 pub struct GeneratePeople<C: ContextRef> {
     pipeline: Pipeline<C>,
-    seed: f32,
+    seed: [u32; 4],
 }
 
 impl<C: ContextRef> GeneratePeople<C> {
     #[inline]
-    pub fn new (context: C) -> Result<Self> where C: Clone {
+    pub fn new(context: C) -> Result<Self>
+    where
+        C: Clone,
+    {
         const WORDS: &[u32] = include_spv!("generate_people.spv");
         let pipeline = ComputeBuilder::new(context)
             .entry(cstr!("generate_people"))
@@ -24,35 +32,50 @@ impl<C: ContextRef> GeneratePeople<C> {
 
         return Ok(Self {
             pipeline,
-            seed: 100f32 * thread_rng().sample::<f32, _>(OpenClosed01),
+            seed: random(),
         });
     }
 
     #[inline]
-    pub fn generate<A: DeviceAllocator> (&mut self, len: u64, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<Person, A>> where C: Clone {
-        let people = Buffer::new_uninit(len, usage, flags, memory_flags, alloc)?;
-        return self.call(people)
-    }
-
-    #[inline]
-    pub fn call<P: DeviceAllocator>(
+    pub fn call<A: DeviceAllocator>(
         &mut self,
-        people: Buffer<MaybeUninit<Person>, P>
-    ) -> Result<Buffer<Person, P>> {
+        len: u64,
+        usage: UsageFlags,
+        flags: BufferFlags,
+        memory_flags: MemoryFlags,
+        alloc: A,
+    ) -> Result<Event<&Context, GeneratePeopleConsumer<A>>> {
+        let people = Buffer::new_uninit(len, usage, flags, memory_flags, alloc)?;
+
         let set: &DescriptorSet = self.pipeline.sets().first().unwrap();
         let people_desc = set.write_descriptor(&people, 0);
         self.pipeline.sets_mut().update(&[people_desc]);
 
-        self.pipeline.compute(..)?
-            .push_contant(&self.seed)
+        let seed = core::mem::replace(&mut self.seed, random());
+        let event = self.pipeline
+            .compute(..)?
+            .push_contant(&seed)
             .dispatch(u64_to_u32(people.len()), 1, 1)?;
 
-        std::thread::sleep(Duration::from_secs(2));
-        // let mut fence = Fence::new(self.pipeline.device(), FenceFlags::empty())?;
-        // fence.bind_to::<_, Pool>(pool, queue, None)?;
-        // fence.wait(None)?;
+        let (event, _) = event.replace(GeneratePeopleConsumer {
+            result: people
+        });
 
-        self.seed = 100f32 * thread_rng().sample::<f32, _>(OpenClosed01);
-        return unsafe { Ok(people.assume_init()) };
+        return Ok(event)
+    }
+}
+
+pub struct GeneratePeopleConsumer<A: DeviceAllocator> {
+    result: Buffer<MaybeUninit<Person>, A>
+}
+
+unsafe impl<'a, A: DeviceAllocator> EventConsumer
+    for GeneratePeopleConsumer<A>
+{
+    type Output = Buffer<Person, A>;
+
+    #[inline]
+    fn consume(self) -> Self::Output {
+        return unsafe { self.result.assume_init() };
     }
 }

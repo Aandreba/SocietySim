@@ -1,28 +1,11 @@
 use std::{num::NonZeroU64, marker::PhantomData, ptr::{addr_of_mut, addr_of, NonNull}, hash::Hash, ffi::CStr};
 use crate::{Result, Entry, physical_dev::{PhysicalDevice, QueueFamily}, utils::usize_to_u32};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Device {
     inner: NonZeroU64,
     parent: PhysicalDevice
 }
-
-impl PartialEq for Device {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner && self.parent == other.parent
-    }
-}
-
-impl Hash for Device {
-    #[inline]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.inner.hash(state);
-        self.parent.hash(state);
-    }
-}
-
-impl Eq for Device {}
 
 impl Device {
     #[inline]

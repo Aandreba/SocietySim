@@ -11,7 +11,13 @@ pub mod math;
 pub mod rand;
 
 use rand::Random;
-use shared::{person::{Person, PersonStats}, person_event::PersonalEvent, time::GameDuration, ExternBool, simd::f32x2};
+use shared::{
+    person::{Person, PersonStats},
+    person_event::PersonalEvent,
+    simd::f32x2,
+    time::GameDuration,
+    ExternBool,
+};
 use spirv_std::{glam::UVec3, macros::debug_printfln, spirv};
 
 // Regular odds (1f32 chance) will result in true once every 100 ticks (approximately, obviously)
@@ -22,11 +28,10 @@ const BASE_CHANCE: f32 = 1f32;
 #[spirv(compute(threads(1)))]
 pub fn generate_people(
     #[spirv(global_invocation_id)] id: UVec3,
-    #[spirv(push_constant)] random: &Random,
+    #[spirv(push_constant)] random: &[u32; 4],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 0)] people: &mut [Person],
 ) {
-    let mut random = *random;
-    random.apply_entropy(f32x2::from_array([id.x as f32, id.x as f32]));
+    let mut random = Random::from_entropy(*random, f32x2::from_array([id.x as f32, id.x as f32]));
 
     people[id.x as usize] = Person {
         is_male: ExternBool::new(random.next_bool()),
@@ -46,13 +51,12 @@ pub fn generate_people(
 #[spirv(compute(threads(1, 1)))]
 pub fn compute_personal_event(
     #[spirv(global_invocation_id)] id: UVec3,
-    #[spirv(push_constant)] random: &Random,
+    #[spirv(push_constant)] random: &[u32; 4],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 0)] people: &[Person],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] events: &[PersonalEvent],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 2)] results: &mut [ExternBool], // [_; x * y]
 ) {
-    let mut random = *random;
-    random.apply_entropy(f32x2::from_array([id.x as f32, id.y as f32]));
+    let mut random = Random::from_entropy(*random, f32x2::from_array([id.x as f32, id.x as f32]));
 
     let person = &people[id.x as usize];
     let event = &events[id.y as usize];

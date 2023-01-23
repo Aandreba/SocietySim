@@ -1,19 +1,20 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(ptr_metadata, rustc_attrs)]
 
-use futures::{stream::FuturesUnordered, FutureExt, TryStreamExt};
-use shared::{person::Person, person_event::PersonalEvent, ExternBool};
+use futures::{future::{try_join}, stream::FuturesUnordered, FutureExt, TryFutureExt, TryStreamExt};
+use shared::person_event::PersonalEvent;
 use std::{collections::HashMap, io::BufReader, panic::resume_unwind, path::Path};
 use tokio::runtime::Runtime;
 use vulkan::{
     alloc::{Book, DeviceAllocator, MemoryFlags},
     buffer::{Buffer, BufferFlags, UsageFlags},
-    context::{Context},
+    context::Context,
     physical_dev::PhysicalDevice,
-    Entry, r#async::EventRuntime,
+    r#async::EventRuntime,
+    Entry,
 };
 
-use crate::game::{generate_people::GeneratePeople, personal_events::PersonalEvents};
+use crate::game::generate_people::GeneratePeople;
 pub mod game;
 
 #[macro_export]
@@ -34,19 +35,37 @@ fn main() -> anyhow::Result<()> {
     let phy = PhysicalDevice::first()?;
     let ctx = Context::new(phy)?;
     let alloc = Book::new(&ctx, None, None);
-    let event_rt = EventRuntime::new();
-    
-    let people = initialize_population(10, &alloc)?;
-    let (_event_names, events) = runtime.block_on(initialize_personal_events(
-        "game/personal_events",
-        &alloc,
-    ))?;
+    let mut event_rt = EventRuntime::new(&ctx);
 
-    let mut evt = PersonalEvents::new(&ctx)?;
-    let result = evt.call(&people, &events)?;
+    let mut generator = GeneratePeople::new(alloc.owned_context())?;
+    let people = generator
+        .call(
+            10,
+            UsageFlags::STORAGE_BUFFER,
+            BufferFlags::empty(),
+            MemoryFlags::MAPABLE,
+            &alloc,
+        )?
+        .wait_async(&event_rt)?;
 
-    let result = result.map(..)?;
-    println!("{:#?}", &result as &[ExternBool]);
+    let (people, (_event_names, events)) = std::thread::scope(|s| {
+        s.spawn(|| {
+            println!("Starting to run");
+            event_rt.run_to_end();
+            println!("Ran until the end");
+        });
+
+        return anyhow::Ok((runtime.block_on(people)?, ((), ())));
+        /*return runtime.block_on(try_join(
+            people.map_err(Into::into),
+            initialize_personal_events("game/personal_events", &alloc),
+        ));*/
+    })?;
+
+    // let mut evt = PersonalEvents::new(&ctx)?;
+    // let result = evt.call(&people, &events)?.wait()?;
+    // let result = result.map(..)?;
+    // println!("{:#?}", &result as &[ExternBool]);
 
     // let mut main = setup_main(&dev)?;
     // call_gpu_main(&mut people, &mut main, &mut pool, &mut queues[0])?;
@@ -56,25 +75,6 @@ fn main() -> anyhow::Result<()> {
     // }
 
     Ok(())
-}
-
-#[inline]
-fn initialize_population<A: DeviceAllocator>(
-    capacity: u64,
-    alloc: A,
-) -> vulkan::Result<Buffer<Person, A>>
-where
-    A::Context: Clone,
-{
-    let mut generator = GeneratePeople::new(alloc.owned_context())?;
-    return generator.generate(
-        capacity,
-        UsageFlags::STORAGE_BUFFER,
-        BufferFlags::empty(),
-        // MemoryFlags::DEVICE_LOCAL,
-        MemoryFlags::MAPABLE,
-        alloc,
-    );
 }
 
 #[inline]

@@ -1,10 +1,13 @@
-use std::{mem::MaybeUninit, marker::PhantomData};
-use rand::{distributions::OpenClosed01, thread_rng, Rng};
+use rand::{random};
 use shared::{person::Person, person_event::PersonalEvent, ExternBool};
+use std::{marker::PhantomData, mem::MaybeUninit};
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags},
     buffer::{Buffer, BufferFlags, UsageFlags},
-    context::{event::{consumer::EventConsumer, Event}, Context, ContextRef},
+    context::{
+        event::{consumer::EventConsumer, Event},
+        Context, ContextRef,
+    },
     cstr,
     descriptor::{DescriptorSet, DescriptorType},
     include_spv,
@@ -15,7 +18,7 @@ use vulkan::{
 
 pub struct PersonalEvents<C: ContextRef> {
     pipeline: Pipeline<C>,
-    seed: f32,
+    seed: [u32; 4],
 }
 
 impl<C: ContextRef> PersonalEvents<C> {
@@ -35,7 +38,7 @@ impl<C: ContextRef> PersonalEvents<C> {
 
         return Ok(Self {
             pipeline,
-            seed: 100f32 * thread_rng().sample::<f32, _>(OpenClosed01),
+            seed: random(),
         });
     }
 
@@ -45,11 +48,11 @@ impl<C: ContextRef> PersonalEvents<C> {
     }
 
     #[inline]
-    pub fn call<'a, P: Clone + DeviceAllocator, E: DeviceAllocator>(
+    pub fn call<'a, 'b, P: Clone + DeviceAllocator, E: DeviceAllocator>(
         &'a mut self,
-        people: &'a Buffer<Person, P>,
-        events: &'a Buffer<PersonalEvent, E>,
-    ) -> Result<Event<&'a Context, PersonalEventsConsumer<'a, C, P, E>>> {
+        people: &'b Buffer<Person, P>,
+        events: &'b Buffer<PersonalEvent, E>,
+    ) -> Result<Event<&'a Context, PersonalEventsConsumer<'b, P, E>>> {
         let result = Buffer::<ExternBool, _>::new_uninit(
             people.len() * events.len(),
             UsageFlags::STORAGE_BUFFER,
@@ -58,44 +61,43 @@ impl<C: ContextRef> PersonalEvents<C> {
             people.alloc().clone(),
         )?;
 
+        
         let set: &DescriptorSet = self.pipeline.sets().first().unwrap();
         let people_desc = set.write_descriptor(people, 0);
         let events_desc = set.write_descriptor(events, 0);
         let result_desc = set.write_descriptor(&result, 0);
         self.pipeline
-            .sets_mut()
-            .update(&[people_desc, events_desc, result_desc]);
-
+        .sets_mut()
+        .update(&[people_desc, events_desc, result_desc]);
+        
+        let seed = core::mem::replace(&mut self.seed, random());
         let event = self
             .pipeline
             .compute(..)?
-            .push_contant(&self.seed)
+            .push_contant(&seed)
             .dispatch(u64_to_u32(people.len()), u64_to_u32(events.len()), 1)?;
 
-        let (event, _) = unsafe {
-            event.replace(PersonalEventsConsumer {
-                parent: self,
-                result,
-                _phtm: PhantomData
-            })
-        };
+        let (event, _) = event.replace(PersonalEventsConsumer {
+            _phtm: PhantomData,
+            result,
+        });
 
         return Ok(event);
     }
 }
 
-pub struct PersonalEventsConsumer<'a, C: ContextRef, P: DeviceAllocator, E: DeviceAllocator> {
-    parent: &'a mut PersonalEvents<C>,
+pub struct PersonalEventsConsumer<'a, P: DeviceAllocator, E: DeviceAllocator> {
     result: Buffer<MaybeUninit<ExternBool>, P>,
-    _phtm: PhantomData<(&'a Buffer<Person, P>, &'a Buffer<PersonalEvent, E>)>
+    _phtm: PhantomData<(&'a Buffer<Person, P>, &'a Buffer<PersonalEvent, E>)>,
 }
 
-unsafe impl<'a, C: ContextRef, P: DeviceAllocator, E: DeviceAllocator> EventConsumer for PersonalEventsConsumer<'a, C, P, E> {
+unsafe impl<'a, P: DeviceAllocator, E: DeviceAllocator> EventConsumer
+    for PersonalEventsConsumer<'a, P, E>
+{
     type Output = Buffer<ExternBool, P>;
 
     #[inline]
     fn consume(self) -> Self::Output {
-        self.parent.seed = 100f32 * thread_rng().sample::<f32, _>(OpenClosed01);
         return unsafe { self.result.assume_init() };
     }
 }
