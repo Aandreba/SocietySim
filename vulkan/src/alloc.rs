@@ -867,14 +867,15 @@ unsafe impl<C: ContextRef> DeviceAllocator for Book<C> {
                 }
             }
 
-            core::hint::spin_loop();
+            std::thread::yield_now();
+            // core::hint::spin_loop();
         }
     }
 
     #[inline]
     unsafe fn free(&self, ptr: MemoryPtr<Self::Metadata>) {
         if let Some(page) = self.pages.get(ptr._meta.page_idx).and_then(OnceCell::get) {
-            page.free(MemoryPtr {
+            return page.free(MemoryPtr {
                 inner: ptr.inner,
                 _meta: ptr._meta.page_info,
                 _phtm: PhantomData,
@@ -908,7 +909,7 @@ unsafe impl<C: ContextRef> DeviceAllocator for Book<C> {
     #[inline]
     unsafe fn unmap(&self, ptr: &MemoryPtr<Self::Metadata>) {
         if let Some(page) = self.pages.get(ptr._meta.page_idx).and_then(OnceCell::get) {
-            page.unmap(&MemoryPtr {
+            return page.unmap(&MemoryPtr {
                 inner: ptr.inner,
                 _meta: ptr._meta.page_info.clone(),
                 _phtm: PhantomData,
