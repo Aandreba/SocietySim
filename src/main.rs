@@ -33,7 +33,7 @@ fn main() -> anyhow::Result<()> {
 
     let phy = PhysicalDevice::first()?;
     let ctx = Context::new(phy)?;
-    let alloc = Book::new(&ctx, None, None); // todo fix alloc bug
+    let alloc = Book::new(&ctx, None, None);
 
     let people = initialize_population(10, &alloc)?;
     let (_event_names, events) = runtime.block_on(initialize_personal_events(
