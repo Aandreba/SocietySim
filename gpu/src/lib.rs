@@ -32,18 +32,19 @@ pub fn generate_people(
     #[spirv(storage_buffer, descriptor_set = 0, binding = 0)] people: &mut [Person],
 ) {
     let mut random = Random::from_entropy(*random, f32x2::from_array([id.x as f32, id.x as f32]));
-
-    people[id.x as usize] = Person {
-        is_male: ExternBool::new(random.next_bool()),
-        age: GameDuration::from_days(random.next_u16() % 36500),
-        stats: PersonStats {
-            cordiality: random.next_u8(),
-            intelligence: random.next_u8(),
-            knowledge: random.next_u8(),
-            finesse: random.next_u8(),
-            gullability: random.next_u8(),
-            health: random.next_u8(),
-        },
+    unsafe {
+        core::ptr::write(&mut people[id.x as usize], Person {
+            is_male: ExternBool::new(random.next_bool()),
+            age: GameDuration::from_days(random.next_u16() % 36500),
+            stats: PersonStats {
+                cordiality: random.next_u8(),
+                intelligence: random.next_u8(),
+                knowledge: random.next_u8(),
+                finesse: random.next_u8(),
+                gullability: random.next_u8(),
+                health: random.next_u8(),
+            },
+        });
     }
 }
 
