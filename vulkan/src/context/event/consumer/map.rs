@@ -2,11 +2,11 @@ use super::EventConsumer;
 
 #[derive(Debug, Clone)]
 pub struct Map<F, U> {
-    f: F,
-    u: U
+    pub(in crate::context) f: F,
+    pub(in crate::context) u: U
 }
 
-impl<T, F: EventConsumer, U: FnOnce(F::Output) -> T> EventConsumer for Map<F, U> {
+unsafe impl<T, F: EventConsumer, U: FnOnce(F::Output) -> T> EventConsumer for Map<F, U> {
     type Output = T;
 
     #[inline]

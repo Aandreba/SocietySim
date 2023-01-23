@@ -1,4 +1,4 @@
-mod map;
+flat_mod! { map }
 use std::{marker::{PhantomData, PhantomPinned}};
 
 #[macro_export(local_inner_macros)]
@@ -15,7 +15,7 @@ macro_rules! forward_phantom {
             } 
         }
 
-        impl $($t)* $crate::context::event::consumer::EventConsumer for $name $($t)* {
+        unsafe impl $($t)* $crate::context::event::consumer::EventConsumer for $name $($t)* {
             type Output = ();
 
             #[inline]
@@ -24,13 +24,13 @@ macro_rules! forward_phantom {
     };
 }
 
-pub trait EventConsumer {
+pub unsafe trait EventConsumer {
     type Output;
 
     fn consume (self) -> Self::Output;
 }
 
-impl<T, F: FnOnce() -> T> EventConsumer for F {
+unsafe impl<T, F: FnOnce() -> T> EventConsumer for F {
     type Output = T;
 
     #[inline]
@@ -39,14 +39,14 @@ impl<T, F: FnOnce() -> T> EventConsumer for F {
     }
 }
 
-impl<T: ?Sized> EventConsumer for PhantomData<T> {
+unsafe impl<T: ?Sized> EventConsumer for PhantomData<T> {
     type Output = ();
 
     #[inline]
     fn consume (self) -> Self::Output {}
 }
 
-impl EventConsumer for PhantomPinned {
+unsafe impl EventConsumer for PhantomPinned {
     type Output = ();
 
     #[inline]

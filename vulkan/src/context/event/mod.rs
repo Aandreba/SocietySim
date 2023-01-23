@@ -1,38 +1,72 @@
 use std::time::Duration;
-use crate::{sync::{Fence}, Result, error::Error};
-use self::consumer::EventConsumer;
-use super::ContextRef;
+use crate::{sync::{Fence}, Result, error::Error, device::Device};
+use self::consumer::{EventConsumer, Map};
+use super::{ContextRef, Context};
 
 pub mod consumer;
 flat_mod! { r#async }
 
 #[derive(Debug)]
-pub struct Event<C: ContextRef, F> {
+pub struct Event<C: ContextRef, N> {
     pub(crate) fence: Fence<C>,
-    pub(crate) f: F
+    pub(crate) c: N
 }
 
-impl<C: ContextRef, F: EventConsumer> Event<C, F> {
+impl<C: ContextRef, N: EventConsumer> Event<C, N> {
     #[inline]
-    pub fn new (fence: Fence<C>, f: F) -> Self {
+    pub fn new (fence: Fence<C>, f: N) -> Self {
         return Self {
             fence,
-            f
+            c: f
         }
     }
 
     #[inline]
-    pub fn wait (self) -> Result<F::Output> {
-        self.fence.wait()?;
-        return Ok(self.f.consume())
+    pub fn context (&self) -> &Context {
+        return self.fence.context()
     }
 
     #[inline]
-    pub fn wait_timeout (self, timeout: Duration) -> ::core::result::Result<F::Output, EventTimeoutError<C, F>> {
+    pub fn device (&self) -> &Device {
+        return self.fence.device()
+    }
+
+    #[inline]
+    pub fn wait (self) -> Result<N::Output> {
+        self.fence.wait()?;
+        return Ok(self.c.consume())
+    }
+
+    #[inline]
+    pub fn wait_timeout (self, timeout: Duration) -> ::core::result::Result<N::Output, EventTimeoutError<C, N>> {
         if self.fence.wait_timeout(timeout)? {
-            return Ok(self.f.consume())
+            return Ok(self.c.consume())
         }
         return Err(EventTimeoutError::Timeout(self))
+    }
+}
+
+impl<C: ContextRef, N: EventConsumer> Event<C, N> {
+    #[inline]
+    pub fn replace<F: EventConsumer> (self, f: F) -> (Event<C, F>, N) {
+        return (
+            Event {
+                fence: self.fence,
+                c: f
+            },
+            self.c
+        )
+    }
+
+    #[inline]
+    pub fn map<T, F: FnOnce(N::Output) -> T> (self, f: F) -> Event<C, Map<N, F>> {
+        return Event {
+            fence: self.fence,
+            c: Map {
+                f: self.c,
+                u: f,
+            }
+        }
     }
 }
 

@@ -30,6 +30,15 @@ pub struct EventRuntime<C: ContextRef> {
 
 impl<C: ContextRef> EventRuntime<C> {
     #[inline]
+    pub fn new () -> Self {
+        return Self {
+            handle: EventRuntimeHandle {
+                queue: Arc::new(FillQueue::new())
+            }
+        }
+    }
+
+    #[inline]
     pub fn handle(&self) -> EventRuntimeHandle<C> {
         self.handle.clone()
     }
@@ -206,7 +215,7 @@ impl<C: ContextRef> EventRuntime<C> {
 
 /// Handle to interect with a running [`FenceRuntime`]
 pub struct EventRuntimeHandle<C: ContextRef> {
-    queue: Arc<FillQueue<Node<C>>>,
+    queue: Arc<FillQueue<Node<C>>>
 }
 
 impl<C: ContextRef> EventRuntimeHandle<C> {
@@ -229,7 +238,7 @@ impl<C: ContextRef> EventRuntimeHandle<C> {
         });
 
         return EventWait {
-            f: Some(event.f),
+            f: Some(event.c),
             flag: sub,
             result,
         };

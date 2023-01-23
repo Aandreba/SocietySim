@@ -10,7 +10,7 @@ use vulkan::{
     buffer::{Buffer, BufferFlags, UsageFlags},
     context::{Context},
     physical_dev::PhysicalDevice,
-    Entry,
+    Entry, r#async::EventRuntime,
 };
 
 use crate::game::{generate_people::GeneratePeople, personal_events::PersonalEvents};
@@ -34,6 +34,7 @@ fn main() -> anyhow::Result<()> {
     let phy = PhysicalDevice::first()?;
     let ctx = Context::new(phy)?;
     let alloc = Book::new(&ctx, None, None);
+    let event_rt = EventRuntime::new();
     
     let people = initialize_population(10, &alloc)?;
     let (_event_names, events) = runtime.block_on(initialize_personal_events(

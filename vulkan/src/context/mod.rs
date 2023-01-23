@@ -29,7 +29,7 @@ pub(crate) struct QueueFamily {
 #[derive(Debug)]
 pub struct Context {
     device: Device,
-    families: Box<[QueueFamily]>,
+    families: Box<[QueueFamily]>
 }
 
 impl Context {

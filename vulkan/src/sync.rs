@@ -1,4 +1,4 @@
-use crate::{context::ContextRef, device::Device, Entry, Result};
+use crate::{context::{ContextRef, Context}, device::Device, Entry, Result};
 use std::{
     num::NonZeroU64,
     ptr::{addr_of, addr_of_mut},
@@ -40,6 +40,11 @@ impl<C: ContextRef> Fence<C> {
         return self.inner.get();
     }
 
+    #[inline]
+    pub fn context(&self) -> &Context {
+        return &self.context
+    }
+    
     #[inline]
     pub fn device(&self) -> &Device {
         return self.context.device();

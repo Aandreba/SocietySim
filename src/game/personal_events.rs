@@ -1,12 +1,16 @@
-use std::time::Duration;
-
+use std::{mem::MaybeUninit, marker::PhantomData};
 use rand::{distributions::OpenClosed01, thread_rng, Rng};
 use shared::{person::Person, person_event::PersonalEvent, ExternBool};
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags},
-    buffer::{Buffer, UsageFlags, BufferFlags},
+    buffer::{Buffer, BufferFlags, UsageFlags},
+    context::{event::{consumer::EventConsumer, Event}, Context, ContextRef},
+    cstr,
+    descriptor::{DescriptorSet, DescriptorType},
+    include_spv,
     pipeline::{ComputeBuilder, Pipeline},
-    Result, descriptor::{DescriptorSet, DescriptorType}, utils::u64_to_u32, shader::ShaderStages, cstr, sync::{FenceFlags, Fence}, include_spv, context::{ContextRef, Context},
+    utils::u64_to_u32,
+    Result,
 };
 
 pub struct PersonalEvents<C: ContextRef> {
@@ -16,7 +20,10 @@ pub struct PersonalEvents<C: ContextRef> {
 
 impl<C: ContextRef> PersonalEvents<C> {
     #[inline]
-    pub fn new (context: C) -> Result<Self> where C: Clone {
+    pub fn new(context: C) -> Result<Self>
+    where
+        C: Clone,
+    {
         const WORDS: &[u32] = include_spv!("compute_personal_event.spv");
 
         let pipeline = ComputeBuilder::new(context)
@@ -33,16 +40,16 @@ impl<C: ContextRef> PersonalEvents<C> {
     }
 
     #[inline]
-    pub fn context (&self) -> &Context {
-        return self.pipeline.context()
+    pub fn context(&self) -> &Context {
+        return self.pipeline.context();
     }
 
     #[inline]
-    pub fn call<P: Clone + DeviceAllocator, E: DeviceAllocator>(
-        &mut self,
-        people: &Buffer<Person, P>,
-        events: &Buffer<PersonalEvent, E>
-    ) -> Result<Buffer<ExternBool, P>> {
+    pub fn call<'a, P: Clone + DeviceAllocator, E: DeviceAllocator>(
+        &'a mut self,
+        people: &'a Buffer<Person, P>,
+        events: &'a Buffer<PersonalEvent, E>,
+    ) -> Result<Event<&'a Context, PersonalEventsConsumer<'a, C, P, E>>> {
         let result = Buffer::<ExternBool, _>::new_uninit(
             people.len() * events.len(),
             UsageFlags::STORAGE_BUFFER,
@@ -55,19 +62,40 @@ impl<C: ContextRef> PersonalEvents<C> {
         let people_desc = set.write_descriptor(people, 0);
         let events_desc = set.write_descriptor(events, 0);
         let result_desc = set.write_descriptor(&result, 0);
-        self.pipeline.sets_mut().update(&[people_desc, events_desc, result_desc]);
+        self.pipeline
+            .sets_mut()
+            .update(&[people_desc, events_desc, result_desc]);
 
-        // TODO maybe this is not thread-safe. dsc_sets may need external synchronization
-        self.pipeline.compute(..)?
+        let event = self
+            .pipeline
+            .compute(..)?
             .push_contant(&self.seed)
             .dispatch(u64_to_u32(people.len()), u64_to_u32(events.len()), 1)?;
 
-        std::thread::sleep(Duration::from_secs(2));
-        // let mut fence = Fence::new(self.pipeline.device(), FenceFlags::empty())?;
-        // fence.bind_to::<_, Ctx>(&mut ctx.pool, &mut ctx.queue, None)?;
-        // fence.wait(None)?;
+        let (event, _) = unsafe {
+            event.replace(PersonalEventsConsumer {
+                parent: self,
+                result,
+                _phtm: PhantomData
+            })
+        };
 
-        self.seed = 100f32 * thread_rng().sample::<f32, _>(OpenClosed01);
-        return unsafe { Ok(result.assume_init()) };
+        return Ok(event);
+    }
+}
+
+pub struct PersonalEventsConsumer<'a, C: ContextRef, P: DeviceAllocator, E: DeviceAllocator> {
+    parent: &'a mut PersonalEvents<C>,
+    result: Buffer<MaybeUninit<ExternBool>, P>,
+    _phtm: PhantomData<(&'a Buffer<Person, P>, &'a Buffer<PersonalEvent, E>)>
+}
+
+unsafe impl<'a, C: ContextRef, P: DeviceAllocator, E: DeviceAllocator> EventConsumer for PersonalEventsConsumer<'a, C, P, E> {
+    type Output = Buffer<ExternBool, P>;
+
+    #[inline]
+    fn consume(self) -> Self::Output {
+        self.parent.seed = 100f32 * thread_rng().sample::<f32, _>(OpenClosed01);
+        return unsafe { self.result.assume_init() };
     }
 }
