@@ -1,20 +1,17 @@
 use futures::Future;
 use pin_project::pin_project;
-use utils_atomics::FillQueue;
 
-use crate::{context::ContextRef, device::Device, utils::usize_to_u32, Entry, Result};
+use crate::{context::ContextRef, device::Device, r#async::FenceRuntimeHandle, Entry, Result};
 use std::{
     num::NonZeroU64,
+    ops::Deref,
     ptr::{addr_of, addr_of_mut},
-    sync::{
-        atomic::{AtomicU8, Ordering},
-        Arc,
-    },
-    time::{Duration, Instant}, ops::Deref,
+    sync::{atomic::AtomicU8, Arc},
+    time::Duration, future::IntoFuture, task::Poll,
 };
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct Fence<C: ContextRef> {
+pub struct Fence<C: ?Sized + ContextRef> {
     inner: NonZeroU64,
     context: C,
 }
@@ -125,15 +122,21 @@ impl<C: ContextRef> Fence<C> {
     }
 
     #[inline]
-    pub fn wait_async(&self) -> FenceWait<C> {
-        self.wait_async_with_budget(Self::MAX_BUDGET)
+    pub fn wait_async<'a>(&'a self, handle: FenceRuntimeHandle<'a>) -> FenceWait where C: 'a + Sync {
+        self.wait_async_with_budget(FenceRuntimeHandle::MAX_BUDGET, handle)
     }
 
     #[inline]
-    pub fn wait_async_with_budget_by_deref<D: 'static + Send + Clone + Deref<Target = Self>> (this: D, budget: Duration) -> FenceWait<C> {
-        let budget = Duration::min(budget, Self::MAX_BUDGET).as_nanos() as u64;
-        let flag = send_fence(this, budget);
-        todo!()
+    pub fn wait_async_with_budget<'a>(
+        &'a self,
+        budget: Duration,
+        handle: FenceRuntimeHandle<'a>,
+    ) -> FenceWait
+    where
+        C: 'a + Sync,
+    {
+        let (result, flag) = handle.push(self, budget);
+        return FenceWait { flag, result };
     }
 
     #[inline]
@@ -148,10 +151,14 @@ impl<C: ContextRef> Fence<C> {
     }
 }
 
-impl<D: ContextRef> Drop for Fence<D> {
+impl<D: ?Sized + ContextRef> Drop for Fence<D> {
     #[inline]
     fn drop(&mut self) {
-        (Entry::get().destroy_fence)(self.device().id(), self.id(), core::ptr::null())
+        (Entry::get().destroy_fence)(
+            self.context.device().id(),
+            self.inner.get(),
+            core::ptr::null(),
+        )
     }
 }
 
@@ -162,21 +169,15 @@ bitflags::bitflags! {
     }
 }
 
-const UNINIT: u8 = 0;
-const WAITING: u8 = 1;
-const ABORTING: u8 = 2;
-
 #[derive(Debug, Clone)]
 #[pin_project]
-pub struct FenceWait<F> {
+pub struct FenceWait {
     #[pin]
     flag: utils_atomics::flag::mpmc::AsyncSubscribe,
-    err: Arc<vk::Result>,
-    fence: F,
-    aborting: Arc<AtomicU8>,
+    result: Arc<vk::Result>,
 }
 
-impl<F: Deref<Target = Fence<C>>, C: ContextRef> Future for FenceWait<F> {
+impl Future for FenceWait {
     type Output = Result<()>;
 
     #[inline]
@@ -184,10 +185,17 @@ impl<F: Deref<Target = Fence<C>>, C: ContextRef> Future for FenceWait<F> {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
-        if self.project().flag.poll(cx).is_ready() {
-            todo!()
+        let this = self.project();
+
+        if this.flag.poll(cx).is_ready() {
+            let result: vk::Result = *(&this.result as &i32);
+            return Poll::Ready(match result {
+                vk::SUCCESS => Ok(()),
+                e => Err(e.into())
+            })
         }
-        todo!()
+
+        return Poll::Pending
     }
 }
 
@@ -201,181 +209,3 @@ impl<F: Deref<Target = Fence<C>>, C: ContextRef> Future for FenceWait<F> {
 //         *guard = true
 //     }
 // }
-
-struct AssertSend<T> (pub T);
-unsafe impl<T> Send for AssertSend<T> {}
-unsafe impl<T> Sync for AssertSend<T> {}
-
-struct Signal {
-    device: u64,
-    fence: u64,
-    budget: u64, // in nanos
-    flag: utils_atomics::flag::mpmc::AsyncFlag,
-    result: Arc<vk::Result>,
-    drop: AssertSend<(*mut (), unsafe fn(*mut ()))>, 
-}
-
-thread_local! {
-    static FENCE_THREAD: once_cell::unsync::OnceCell<Arc<FillQueue<Signal>>> = once_cell::unsync::OnceCell::new();
-}
-
-fn send_fence<F: 'static + Send + Deref<Target = Fence<C>>, C: ContextRef>(
-    fence: F,
-    budget: u64
-) -> (utils_atomics::flag::mpmc::AsyncSubscribe, Arc<vk::Result>) {
-    let (flag, sub) = utils_atomics::flag::mpmc::async_flag();
-    let result = Arc::new(vk::ERROR_UNKNOWN);
-    let drop: unsafe fn(*mut ()) = |ptr| unsafe {
-        core::ptr::drop_in_place(ptr.cast::<F>())
-    };
-    
-    let queue = FENCE_THREAD.with(|f| f.get_or_init(init_thread));
-    queue.push(Signal {
-        device: fence.device().id(),
-        fence: fence.id(),
-        result: result.clone(),
-        budget,
-        flag,
-        drop: AssertSend((Box::into_raw(Box::new(fence)).cast(), drop))
-    });
-
-    return (sub, result);
-}
-
-#[inline]
-fn init_thread() -> Arc<FillQueue<Signal>> {
-    let queue = Arc::new(FillQueue::new());
-    let recv = Arc::downgrade(&queue);
-
-    std::thread::spawn(move || {
-        struct Metadata {
-            budget: u64, // in nanos
-            flag: utils_atomics::flag::mpmc::AsyncFlag,
-            result: Arc<vk::Result>,
-            drop: (*mut (), unsafe fn(*mut ()))
-        }
-
-        impl Drop for Metadata {
-            #[inline]
-            fn drop(&mut self) {
-                unsafe { self.drop.1(self.drop.0) }
-            }
-        }
-
-        struct InnerEntry {
-            fences: Vec<vk::Fence>,
-            data: Vec<Metadata>,
-        }
-
-        let mut recv = Some(recv);
-        let mut devices = Vec::<(_, InnerEntry)>::new();
-
-        loop {
-            // Check if receiver is still open
-            if let Some(ref this_recv) = recv {
-                // Check if receiver is still open
-                if let Some(this_recv) = this_recv.upgrade() {
-                    for Signal {
-                        device,
-                        fence,
-                        budget,
-                        flag,
-                        result,
-                        drop
-                    } in this_recv.chop()
-                    {
-                        // Add to device-fences map
-                        let mut added = false;
-                        for (key, entry) in devices.iter_mut() {
-                            if key == &device {
-                                entry.fences.push(fence);
-                                entry.data.push(Metadata {
-                                    budget,
-                                    flag,
-                                    result,
-                                    drop: drop.0
-                                });
-                                added = true;
-                                break;
-                            }
-                        }
-
-                        // If the device wasn't found, add new entry
-                        if !added {
-                            devices.push((
-                                device,
-                                InnerEntry {
-                                    fences: vec![fence],
-                                    data: vec![Metadata {
-                                        budget,
-                                        flag,
-                                        result,
-                                        drop: drop.0
-                                    }],
-                                },
-                            ));
-                        }
-                    }
-                } else if devices.iter().all(|(_, entry)| entry.fences.is_empty()) {
-                    break;
-                } else {
-                    recv = None
-                }
-            } else if devices.iter().all(|(_, entry)| entry.fences.is_empty()) {
-                break;
-            }
-
-            for (device, entry) in devices.iter() {
-                if let Some(budget) = entry.data.iter().map(|x| x.budget).max() {
-                    // Run until budget is consumed
-                    loop {
-                        let now = Instant::now();
-                        let wait = (Entry::get().wait_for_fences)(
-                            *device,
-                            usize_to_u32(entry.fences.len()),
-                            entry.fences.as_ptr(),
-                            vk::FALSE,
-                            budget,
-                        );
-                        let elapsed = now.elapsed();
-
-                        match wait {
-                            vk::TIMEOUT => break,
-                            _ => {
-                                // Find and treat with all completed/errored fences
-                                let mut i = 0;
-                                while i < entry.fences.len() {
-                                    let fence = unsafe { *entry.fences.get_unchecked(i) };
-                                    match (Entry::get().get_fence_status)(*device, fence) {
-                                        vk::NOT_READY => i += 1,
-                                        r => unsafe {
-                                            // IMPL: Although the order is not mainteined, the correlation between the
-                                            // indices of both vectors is, so this is sound
-                                            entry.fences.swap_remove(i);
-                                            let data = entry.data.swap_remove(i);
-
-                                            // SAFETY: Until the flag is marked, we are the only ones with access to err
-                                            *Arc::get_mut_unchecked(&mut data.result) = r;
-                                            data.flag.mark();
-                                        },
-                                    }
-                                }
-
-                                // Check if there is enough remaining budget
-                                if let Some(remaining) =
-                                    budget.checked_sub(elapsed.as_nanos() as u64)
-                                {
-                                    budget = remaining
-                                } else {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    return queue;
-}

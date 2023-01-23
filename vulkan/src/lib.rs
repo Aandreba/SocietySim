@@ -37,6 +37,7 @@ pub mod pipeline;
 pub mod descriptor;
 pub mod sync;
 pub mod context;
+pub mod r#async;
 //pub mod shared;
 
 //flat_mod! { alloc }

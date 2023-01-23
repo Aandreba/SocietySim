@@ -16,7 +16,6 @@ use std::{
 
 pub trait ContextRef = Deref<Target = Context>;
 pub mod command;
-pub mod event;
 
 // https://stackoverflow.com/a/55273688
 #[derive(Debug)]

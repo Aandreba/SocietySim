@@ -1,6 +1,6 @@
 use std::{sync::{MutexGuard, TryLockError}, num::NonZeroU64, ptr::addr_of};
 use crate::{Entry, Result, sync::{Fence, FenceFlags}};
-use super::{QueueFamily, ContextRef, Context};
+use super::{QueueFamily, Context};
 
 flat_mod! { compute, transfer }
 

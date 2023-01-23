@@ -1,8 +1,8 @@
 use super::Command;
-use crate::{buffer::Buffer, Entry, Result, utils::usize_to_u32, alloc::DeviceAllocator};
+use crate::{buffer::Buffer, Entry, Result, utils::usize_to_u32, alloc::DeviceAllocator, sync::Fence, context::Context};
 use std::{
     marker::PhantomData,
-    ops::{Bound, RangeBounds},
+    ops::{Bound, RangeBounds, Deref},
 };
 
 pub struct TransferCommand<'a, 'b> {
@@ -36,10 +36,17 @@ impl<'a, 'b> TransferCommand<'a, 'b> {
 
     #[inline]
     pub fn execute (self) -> Result<()> {
-        self.cmd.submit()
+        let fence = self.cmd.submit()?;
+        todo!()
     }
 }
 
+pub struct TransferEvent<'a, 'b> {
+    fence: Fence<&'a Context>,
+    _phtm: PhantomData<&'b mut &'b ()>
+}
+
+/// Two-buffer region where a copy is to be done by Vulkan
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BufferCopyRegion<B, T> {
     pub src_offset: Bound<vk::DeviceSize>,

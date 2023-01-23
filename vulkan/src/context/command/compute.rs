@@ -79,6 +79,7 @@ impl<'a, 'b, C: ContextRef> ComputeCommand<'a, 'b, C> {
     #[inline]
     pub fn dispatch (self, x: u32, y: u32, z: u32) -> Result<()> {
         (Entry::get().cmd_dispatch)(self.cmd.buffer(), x, y, z);
-        return self.cmd.submit();
+        self.cmd.submit();
+        todo!()
     }
 }
