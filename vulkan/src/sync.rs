@@ -1,25 +1,17 @@
-use futures::Future;
-use pin_project::pin_project;
-
-use crate::{context::ContextRef, device::Device, r#async::FenceRuntimeHandle, Entry, Result};
+use crate::{context::ContextRef, device::Device, Entry, Result};
 use std::{
     num::NonZeroU64,
-    ops::Deref,
     ptr::{addr_of, addr_of_mut},
-    sync::{atomic::AtomicU8, Arc},
-    time::Duration, future::IntoFuture, task::Poll,
+    time::Duration,
 };
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct Fence<C: ?Sized + ContextRef> {
-    inner: NonZeroU64,
-    context: C,
+pub struct Fence<C: ContextRef> {
+    pub(crate) inner: NonZeroU64,
+    pub(crate) context: C,
 }
 
 impl<C: ContextRef> Fence<C> {
-    /// Kinda arbitrary, may change in the future
-    pub const MAX_BUDGET: Duration = Duration::from_millis(5);
-
     pub fn new(context: C, flags: FenceFlags) -> Result<Self> {
         let info = vk::FenceCreateInfo {
             sType: vk::STRUCTURE_TYPE_FENCE_CREATE_INFO,
@@ -95,6 +87,16 @@ impl<C: ContextRef> Fence<C> {
         }
     }
 
+    #[inline]
+    pub fn wait_nanos (&self, nanos: u64) -> Result<bool> {
+        return match self.wait_for_fences(nanos) {
+            vk::SUCCESS => Ok(true),
+            vk::TIMEOUT => Ok(false),
+            e => Err(e.into()),
+        }
+    }
+
+    #[inline]
     pub fn wait_timeout(&self, timeout: Duration) -> Result<bool> {
         const LIMIT: u128 = u64::MAX as u128;
 
@@ -122,24 +124,6 @@ impl<C: ContextRef> Fence<C> {
     }
 
     #[inline]
-    pub fn wait_async<'a>(&'a self, handle: FenceRuntimeHandle<'a>) -> FenceWait where C: 'a + Sync {
-        self.wait_async_with_budget(FenceRuntimeHandle::MAX_BUDGET, handle)
-    }
-
-    #[inline]
-    pub fn wait_async_with_budget<'a>(
-        &'a self,
-        budget: Duration,
-        handle: FenceRuntimeHandle<'a>,
-    ) -> FenceWait
-    where
-        C: 'a + Sync,
-    {
-        let (result, flag) = handle.push(self, budget);
-        return FenceWait { flag, result };
-    }
-
-    #[inline]
     fn wait_for_fences(&self, nanos: u64) -> vk::Result {
         return (Entry::get().wait_for_fences)(
             self.device().id(),
@@ -151,12 +135,12 @@ impl<C: ContextRef> Fence<C> {
     }
 }
 
-impl<D: ?Sized + ContextRef> Drop for Fence<D> {
+impl<D: ContextRef> Drop for Fence<D> {
     #[inline]
     fn drop(&mut self) {
         (Entry::get().destroy_fence)(
-            self.context.device().id(),
-            self.inner.get(),
+            self.device().id(),
+            self.id(),
             core::ptr::null(),
         )
     }
@@ -168,44 +152,3 @@ bitflags::bitflags! {
         const SIGNALED = vk::FENCE_CREATE_SIGNALED_BIT;
     }
 }
-
-#[derive(Debug, Clone)]
-#[pin_project]
-pub struct FenceWait {
-    #[pin]
-    flag: utils_atomics::flag::mpmc::AsyncSubscribe,
-    result: Arc<vk::Result>,
-}
-
-impl Future for FenceWait {
-    type Output = Result<()>;
-
-    #[inline]
-    fn poll(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        let this = self.project();
-
-        if this.flag.poll(cx).is_ready() {
-            let result: vk::Result = *(&this.result as &i32);
-            return Poll::Ready(match result {
-                vk::SUCCESS => Ok(()),
-                e => Err(e.into())
-            })
-        }
-
-        return Poll::Pending
-    }
-}
-
-// impl<C: ContextRef> Drop for FenceWait<'_, C> {
-//     #[inline]
-//     fn drop(&mut self) {
-//         let mut guard = match self.abort.lock() {
-//             Ok(x) => x,
-//             Err(e) => e.into_inner()
-//         };
-//         *guard = true
-//     }
-// }

@@ -5,7 +5,7 @@ use crate::{
     utils::{u64_to_usize, UpQueue},
     Entry, Result,
 };
-use humansize::{FormatSize, FormatSizeOptions, BINARY};
+use humansize::{FormatSize, BINARY};
 use once_cell::sync::OnceCell;
 use std::{
     ffi::c_void,

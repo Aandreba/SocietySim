@@ -1,11 +1,11 @@
 use super::{Command};
 use crate::{
-    context::{ContextRef},
+    context::{ContextRef, event::Event, Context},
     descriptor::DescriptorSet,
     pipeline::{Pipeline, PipelineBindPoint},
     shader::ShaderStages,
     utils::usize_to_u32,
-    Entry, Result,
+    Entry, Result, forward_phantom,
 };
 use std::{
     ffi::c_void,
@@ -77,9 +77,13 @@ impl<'a, 'b, C: ContextRef> ComputeCommand<'a, 'b, C> {
     }
 
     #[inline]
-    pub fn dispatch (self, x: u32, y: u32, z: u32) -> Result<()> {
+    pub fn dispatch (self, x: u32, y: u32, z: u32) -> Result<Event<&'a Context, ComputeConsumer>> {
         (Entry::get().cmd_dispatch)(self.cmd.buffer(), x, y, z);
-        self.cmd.submit();
-        todo!()
+        let fence = self.cmd.submit()?;
+        return Ok(Event::new(fence, ComputeConsumer::new()))
     }
+}
+
+forward_phantom! {
+    () as pub ComputeConsumer
 }

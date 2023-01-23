@@ -1,8 +1,8 @@
 use super::Command;
-use crate::{buffer::Buffer, Entry, Result, utils::usize_to_u32, alloc::DeviceAllocator, sync::Fence, context::Context};
+use crate::{buffer::Buffer, Entry, Result, utils::usize_to_u32, alloc::DeviceAllocator, context::{Context, event::Event}, forward_phantom};
 use std::{
     marker::PhantomData,
-    ops::{Bound, RangeBounds, Deref},
+    ops::{Bound, RangeBounds},
 };
 
 pub struct TransferCommand<'a, 'b> {
@@ -35,15 +35,14 @@ impl<'a, 'b> TransferCommand<'a, 'b> {
     }
 
     #[inline]
-    pub fn execute (self) -> Result<()> {
+    pub fn execute (self) -> Result<Event<&'a Context, TransferConsumer<'b>>> {
         let fence = self.cmd.submit()?;
-        todo!()
+        return Ok(Event::new(fence, TransferConsumer::new()))
     }
 }
 
-pub struct TransferEvent<'a, 'b> {
-    fence: Fence<&'a Context>,
-    _phtm: PhantomData<&'b mut &'b ()>
+forward_phantom! {
+    &'b mut &'b () as pub TransferConsumer<'b>
 }
 
 /// Two-buffer region where a copy is to be done by Vulkan
