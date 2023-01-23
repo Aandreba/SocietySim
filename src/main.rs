@@ -34,7 +34,7 @@ fn main() -> anyhow::Result<()> {
     let phy = PhysicalDevice::first()?;
     let ctx = Context::new(phy)?;
     let alloc = Book::new(&ctx, None, None);
-
+    
     let people = initialize_population(10, &alloc)?;
     let (_event_names, events) = runtime.block_on(initialize_personal_events(
         "game/personal_events",
@@ -77,7 +77,7 @@ where
 }
 
 #[inline]
-async fn initialize_personal_events<P: 'static + Send + Clone + AsRef<Path>, A: DeviceAllocator>(
+async fn initialize_personal_events<P: 'static + Send + AsRef<Path>, A: DeviceAllocator>(
     path: P,
     alloc: A,
 ) -> anyhow::Result<(Vec<String>, Buffer<PersonalEvent, A>)> {
@@ -86,7 +86,7 @@ async fn initialize_personal_events<P: 'static + Send + Clone + AsRef<Path>, A: 
 
     while let Some(entry) = dir.next_entry().await? {
         if entry.metadata().await?.is_file() {
-            let path = path.clone();
+            let path = entry.path();
             let task = tokio::task::spawn_blocking(move || {
                 let read = BufReader::new(std::fs::File::open(path)?);
                 let reader = serde_json::from_reader::<_, HashMap<String, PersonalEvent>>(read)?;

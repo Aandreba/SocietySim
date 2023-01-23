@@ -16,6 +16,7 @@ use std::{
 
 pub trait ContextRef = Deref<Target = Context>;
 pub mod command;
+pub mod event;
 
 // https://stackoverflow.com/a/55273688
 #[derive(Debug)]
@@ -90,7 +91,7 @@ impl Context {
     }
 
     #[inline]
-    fn command(&self, flags: QueueFlags) -> Result<Command<'_>> {
+    fn command (&self, flags: QueueFlags) -> Result<Command<'_>> {
         let (pool, family) = 'outer: loop {
             for family in self.families.iter() {
                 if family.flags.contains(flags) {
@@ -104,7 +105,7 @@ impl Context {
             std::thread::yield_now();
         };
 
-        return Command::new(family, pool);
+        return Command::new(self, family, pool);
     }
 }
 

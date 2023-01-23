@@ -5,6 +5,7 @@ use crate::{
     utils::{u64_to_usize, UpQueue},
     Entry, Result,
 };
+use humansize::{FormatSize, FormatSizeOptions, BINARY};
 use once_cell::sync::OnceCell;
 use std::{
     ffi::c_void,
@@ -811,7 +812,7 @@ unsafe impl<C: ContextRef> DeviceAllocator for Book<C> {
             #[cfg(debug_assertions)]
             eprintln!(
                 "Tried to allocate too much memory: {} bytes of a maximum of {}",
-                size, self.range.end
+                size.format_size(BINARY), self.range.end.format_size(BINARY)
             );
             return Err(vk::ERROR_OUT_OF_DEVICE_MEMORY.into());
         }

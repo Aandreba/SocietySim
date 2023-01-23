@@ -62,7 +62,11 @@ const LIB_PATH: &str = "libvulkan.so";
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 const LIB_PATH: &str = "libMoltenVK.dylib";
 
+#[cfg(not(debug_assertions))]
+static mut CURRENT_ENTRY: core::mem::MaybeUninit<Entry> = core::mem::MaybeUninit::uninit();
+#[cfg(debug_assertions)]
 static mut CURRENT_ENTRY: Option<Entry> = None;
+
 const ENTRY_POINT: &[u8] = b"vkGetInstanceProcAddr\0";
 const CREATE_INSTANCE: &CStr = cstr!("vkCreateInstance");
 
@@ -144,7 +148,7 @@ impl Entry {
             #[cfg(debug_assertions)]
             return CURRENT_ENTRY.as_ref().unwrap();
             #[cfg(not(debug_assertions))]
-            return Ok(CURRENT_ENTRY.as_ref().unwrap_unchecked());
+            return Ok(CURRENT_ENTRY.assume_init_ref());
         }
     }
 }
