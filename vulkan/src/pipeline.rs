@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ffi::CStr, ops::{Index, RangeBounds}};
+use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ffi::CStr, ops::{Index, RangeBounds}, pin::Pin};
 use crate::{shader::{LayoutCreateFlags, ShaderStages, Shader}, Entry, Result, device::{Device}, utils::usize_to_u32, descriptor::{DescriptorType, DescriptorPool, DescriptorPoolFlags, DescriptorSets, DescriptorSet}, context::{ContextRef, Context, command::ComputeCommand}};
 use proc::cstr;
 
@@ -231,6 +231,11 @@ impl<C: ContextRef> Pipeline<C> {
     }
 
     #[inline]
+    pub fn owned_context (&self) -> C where C: Clone {
+        return self.sets.owned_context();
+    }
+
+    #[inline]
     pub fn sets (&self) -> &DescriptorSets<C> {
         return &self.sets
     }
@@ -246,8 +251,13 @@ impl<C: ContextRef> Pipeline<C> {
     }
 
     #[inline]
-    pub fn compute<R: RangeBounds<usize>> (&self, desc_sets: R) -> Result<ComputeCommand<'_, '_, C>> where [DescriptorSet]: Index<R, Output = [DescriptorSet]>,{
-        return self.context().compute_command(self, desc_sets)
+    pub fn compute<R: RangeBounds<usize>> (&self, desc_sets: R) -> Result<ComputeCommand<'_, &'_ Context, C>> where [DescriptorSet]: Index<R, Output = [DescriptorSet]>,{
+        return Context::compute_command_by_deref(Pin::new(self.context()), self, desc_sets)
+    }
+    
+    #[inline]
+    pub fn compute_owned<R: RangeBounds<usize>> (&self, desc_sets: R) -> Result<ComputeCommand<'_, C, C>> where C: Clone + Unpin, [DescriptorSet]: Index<R, Output = [DescriptorSet]>,{
+        return Context::compute_command_by_deref(Pin::new(self.owned_context()), self, desc_sets)
     }
 }
 

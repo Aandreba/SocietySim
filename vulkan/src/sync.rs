@@ -117,15 +117,11 @@ impl<C: ContextRef> Fence<C> {
             }
         }
 
-        if rem > 0 {
-            return match self.wait_for_fences(rem) {
-                vk::SUCCESS => Ok(true),
-                vk::TIMEOUT => Ok(false),
-                e => Err(e.into()),
-            };
+        return match self.wait_for_fences(rem) {
+            vk::SUCCESS => Ok(true),
+            vk::TIMEOUT => Ok(false),
+            e => Err(e.into()),
         }
-
-        return Ok(false);
     }
 
     #[inline]

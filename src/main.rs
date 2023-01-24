@@ -1,21 +1,14 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(ptr_metadata, rustc_attrs)]
+#![feature(ptr_metadata, iterator_try_collect, rustc_attrs)]
 
-use futures::{future::{try_join}, stream::FuturesUnordered, FutureExt, TryStreamExt};
 use population::Population;
-use shared::person_event::PersonalEvent;
-use std::{collections::HashMap, io::BufReader, panic::resume_unwind, path::Path};
-use tokio::runtime::Runtime;
 use vulkan::{
-    alloc::{Book, DeviceAllocator, MemoryFlags},
-    buffer::{Buffer, BufferFlags, UsageFlags},
+    alloc::{Book},
     context::Context,
     physical_dev::PhysicalDevice,
-    r#async::EventRuntime,
     Entry,
 };
 
-use crate::game::generate_people::GeneratePeople;
 pub mod game;
 pub mod menu;
 pub mod population;
@@ -33,14 +26,13 @@ macro_rules! flat_mod {
 fn main() -> anyhow::Result<()> {
     //let _ = unsafe { Entry::builder(1, 0, 0).build_in("/opt/homebrew/Cellar/molten-vk/1.2.1/lib/libMoltenVK.dylib") }?;
     let _ = unsafe { Entry::builder(1, 1, 0).build() }?;
-    let runtime = Runtime::new()?;
+    //let runtime = Runtime::new()?;
 
     let phy = PhysicalDevice::first()?;
     let ctx = Context::new(phy)?;
     let alloc = Book::new(&ctx, None, None);
-    let mut event_rt = EventRuntime::new(&ctx);
 
-    let population = Population::new(10_000, &alloc)?;
+    let population = Population::new(10, &alloc)?;
 
     // let mut evt = PersonalEvents::new(&ctx)?;
     // let result = evt.call(&people, &events)?.wait()?;
@@ -59,7 +51,7 @@ fn main() -> anyhow::Result<()> {
 
 #[test]
 fn disassemble() -> anyhow::Result<()> {
-    fn get_path(name: impl AsRef<Path>) -> anyhow::Result<std::path::PathBuf> {
+    fn get_path(name: impl AsRef<std::path::Path>) -> anyhow::Result<std::path::PathBuf> {
         return Ok([
             "target",
             "spirv-builder",
@@ -73,7 +65,7 @@ fn disassemble() -> anyhow::Result<()> {
         .join(name.as_ref().with_extension("spv")));
     }
 
-    fn spirv_cross(name: impl AsRef<Path>) -> anyhow::Result<()> {
+    fn spirv_cross(name: impl AsRef<std::path::Path>) -> anyhow::Result<()> {
         let path = get_path(name.as_ref())?;
         let cmd = std::process::Command::new("spirv-cross")
             .arg("--msl")

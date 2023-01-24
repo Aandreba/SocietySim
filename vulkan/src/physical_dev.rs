@@ -1,14 +1,7 @@
 use crate::{vk, Entry, Result};
 use std::{
-    ffi::{CStr},
-    fmt::Debug,
-    hash::Hash,
-    marker::PhantomPinned,
-    mem::MaybeUninit,
-    num::NonZeroU64,
-    pin::Pin,
-    ptr::addr_of_mut,
-    sync::Arc, ops::Deref,
+    ffi::CStr, fmt::Debug, hash::Hash, marker::PhantomPinned, mem::MaybeUninit, num::NonZeroU64,
+    ops::Deref, pin::Pin, ptr::addr_of_mut, sync::Arc,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -71,12 +64,42 @@ impl PhysicalDevice {
     }
 
     #[inline]
+    pub fn memory_props(&self) -> vk::PhysicalDeviceMemoryProperties {
+        let mut props = MaybeUninit::uninit();
+        (Entry::get().get_physical_device_memory_properties)(self.id(), props.as_mut_ptr());
+        return unsafe { props.assume_init() };
+    }
+
+    #[inline]
+    pub fn max_available_memory(&self, flags: MemoryHeapFlags) -> Option<vk::DeviceSize> {
+        let props = self.memory_props();
+        return props.memoryHeaps[..(props.memoryHeapCount as usize)]
+            .iter()
+            .filter(|x| MemoryHeapFlags::from_bits_truncate(x.flags).contains(flags))
+            .map(|x| x.size)
+            .max();
+    }
+    
+    #[inline]
+    pub fn available_memory(&self, flags: MemoryHeapFlags) -> vk::DeviceSize {
+        let props = self.memory_props();
+        return props.memoryHeaps[..(props.memoryHeapCount as usize)]
+            .iter()
+            .filter(|x| MemoryHeapFlags::from_bits_truncate(x.flags).contains(flags))
+            .map(|x| x.size)
+            .sum();
+    }
+
+    #[inline]
     pub fn properties(self) -> Pin<Arc<Properties>> {
         let mut props_arc = Arc::<Properties>::new(Properties {
             props: vk::PhysicalDeviceProperties2 {
                 sType: vk::STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
                 pNext: core::ptr::null_mut(),
-                properties: unsafe { #[allow(invalid_value)] MaybeUninit::uninit().assume_init() },
+                properties: unsafe {
+                    #[allow(invalid_value)]
+                    MaybeUninit::uninit().assume_init()
+                },
             },
 
             maintainence: vk::PhysicalDeviceMaintenance3Properties {
@@ -93,7 +116,10 @@ impl PhysicalDevice {
             let props = Arc::get_mut_unchecked(&mut props_arc);
             props.props.pNext = addr_of_mut!(props.maintainence).cast();
 
-            (Entry::get().get_physical_device_properties2)(self.inner.get(), addr_of_mut!(props.props));
+            (Entry::get().get_physical_device_properties2)(
+                self.inner.get(),
+                addr_of_mut!(props.props),
+            );
             return Pin::new_unchecked(props_arc);
         }
     }
@@ -105,7 +131,7 @@ impl PhysicalDevice {
         return unsafe { features.assume_init() };
     }
 
-    pub fn queue_families_raw (self) -> Vec<vk::QueueFamilyProperties> {
+    pub fn queue_families_raw(self) -> Vec<vk::QueueFamilyProperties> {
         let mut count = 0;
         (Entry::get().get_physical_device_queue_family_properties)(
             self.inner.get(),
@@ -123,10 +149,11 @@ impl PhysicalDevice {
 
         return result;
     }
-    
+
     #[inline]
     pub fn queue_families(self) -> impl Iterator<Item = QueueFamily> {
-        return self.queue_families_raw()
+        return self
+            .queue_families_raw()
             .into_iter()
             .enumerate()
             .map(move |(idx, inner)| QueueFamily {
@@ -203,8 +230,8 @@ impl Properties {
     }
 
     #[inline]
-    pub fn as_raw (&self) -> &vk::PhysicalDeviceProperties {
-        return &self.props.properties
+    pub fn as_raw(&self) -> &vk::PhysicalDeviceProperties {
+        return &self.props.properties;
     }
 
     #[inline]
@@ -301,7 +328,7 @@ impl Debug for QueueFamily {
 
 bitflags::bitflags! {
     #[repr(transparent)]
-    pub struct QueueFlags: vk::QueueFlags {
+    pub struct QueueFlags: vk::QueueFlagBits {
         /// Queue supports graphics operations
         const GRAPHICS = vk::QUEUE_GRAPHICS_BIT;
         /// Queue supports compute operations
@@ -315,5 +342,14 @@ bitflags::bitflags! {
         const VIDEO_DECODE_KHR = vk::QUEUE_VIDEO_DECODE_BIT_KHR;
         const VIDEO_ENCODE_KHR = vk::QUEUE_VIDEO_ENCODE_BIT_KHR;
         const OPTICAL_FLOW_NV = vk::QUEUE_OPTICAL_FLOW_BIT_NV;
+    }
+
+    #[repr(transparent)]
+    pub struct MemoryHeapFlags: vk::MemoryHeapFlagBits {
+        /// If set, heap represents device memory
+        const DEVICE_LOCAL = vk::MEMORY_HEAP_DEVICE_LOCAL_BIT;
+        /// If set, heap allocations allocate multiple instances by default
+        const MULTI_INSTANCE = vk::MEMORY_HEAP_MULTI_INSTANCE_BIT;
+        const MULTI_INSTANCE_KHR = vk::MEMORY_HEAP_MULTI_INSTANCE_BIT_KHR;
     }
 }

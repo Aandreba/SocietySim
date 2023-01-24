@@ -2,7 +2,7 @@ use super::Command;
 use crate::{
     alloc::DeviceAllocator,
     buffer::Buffer,
-    context::{event::Event, Context},
+    context::{event::Event, ContextRef},
     forward_phantom,
     utils::usize_to_u32,
     Entry, Result,
@@ -10,18 +10,18 @@ use crate::{
 use std::{
     marker::PhantomData,
     mem::MaybeUninit,
-    ops::{Bound, RangeBounds},
+    ops::{Bound, RangeBounds}, pin::Pin,
 };
 
 #[derive(Debug)]
-pub struct TransferCommand<'a, 'b> {
-    cmd: Command<'a>,
+pub struct TransferCommand<'b, C: ContextRef> {
+    cmd: Command<C>,
     _phtm: PhantomData<&'b mut &'b ()>,
 }
 
-impl<'a, 'b> TransferCommand<'a, 'b> {
+impl<'b, C: ContextRef> TransferCommand<'b, C> {
     #[inline]
-    pub(crate) fn new(cmd: Command<'a>) -> Self {
+    pub(crate) fn new(cmd: Command<C>) -> Self {
         return Self {
             cmd,
             _phtm: PhantomData,
@@ -87,13 +87,13 @@ impl<'a, 'b> TransferCommand<'a, 'b> {
     }
 
     #[inline]
-    pub fn execute(self) -> Result<Event<&'a Context, TransferConsumer<'b>>> {
+    pub fn execute(self) -> Result<Event<Pin<C>, TransferConsumer<'b>>> {
         let fence = self.cmd.submit()?;
         return Ok(Event::new(fence, TransferConsumer::new()));
     }
 }
 
-impl<'a, 'b> TransferCommand<'a, 'b> {
+impl<'b, C: ContextRef> TransferCommand<'b, C> {
     #[inline]
     pub fn buffer_write_init<T: Copy, A: DeviceAllocator>(
         self,
@@ -124,7 +124,7 @@ impl<'a, 'b> TransferCommand<'a, 'b> {
 }
 
 forward_phantom! {
-    &'b mut &'b () as pub TransferConsumer<'b>
+    &'b mut &'b () as pub TransferConsumer<'b,>
 }
 
 /// Two-buffer region where a copy is to be done by Vulkan

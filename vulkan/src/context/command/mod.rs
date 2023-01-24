@@ -1,18 +1,17 @@
-use std::{sync::{MutexGuard, TryLockError}, num::NonZeroU64, ptr::addr_of};
+use std::{sync::{MutexGuard, TryLockError}, num::NonZeroU64, ptr::{addr_of, NonNull}, pin::Pin, mem::ManuallyDrop};
 use crate::{Entry, Result, sync::{Fence, FenceFlags}};
-use super::{QueueFamily, Context};
-
+use super::{QueueFamily, ContextRef};
 flat_mod! { compute, transfer }
 
 #[derive(Debug)]
-pub struct Command<'a> {
-    ctx: &'a Context,
-    family: &'a QueueFamily,
-    pool_buffer: MutexGuard<'a, [NonZeroU64; 2]>,
+pub struct Command<C: ContextRef> {
+    ctx: Pin<C>,
+    family: NonNull<QueueFamily>,
+    pool_buffer: MutexGuard<'static, [NonZeroU64; 2]>,
 }
 
-impl<'a> Command<'a> {
-    pub(crate) fn new (ctx: &'a Context, family: &'a QueueFamily, pool_buffer: MutexGuard<'a, [NonZeroU64; 2]>) -> Result<Self> {
+impl<C: ContextRef> Command<C> {
+    pub(crate) unsafe fn new (ctx: Pin<C>, family: *const QueueFamily, pool_buffer: MutexGuard<'static, [NonZeroU64; 2]>) -> Result<Self> {
         let info = vk::CommandBufferBeginInfo {
             sType: vk::STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             pNext: core::ptr::null(),
@@ -24,7 +23,11 @@ impl<'a> Command<'a> {
             (Entry::get().begin_command_buffer)(pool_buffer[1].get(), addr_of!(info))
         }
 
-        return Ok(Self { ctx, pool_buffer, family })
+        return Ok(Self {
+            ctx,
+            pool_buffer: core::mem::transmute(pool_buffer),
+            family: NonNull::new_unchecked(family.cast_mut())
+        })
     }
 
     #[inline]
@@ -38,13 +41,19 @@ impl<'a> Command<'a> {
     }
 
     #[inline]
-    pub fn submit (self) -> Result<Fence<&'a Context>> {
-        let fence = Fence::new(self.ctx, FenceFlags::empty())?;
-        let family = self.family;
-        //let pool = self.pool();
-        let buffer = self.buffer();
-        drop(self);
-        
+    pub fn submit (self) -> Result<Fence<Pin<C>>> {
+        let this = ManuallyDrop::new(self);
+        let ctx = unsafe { core::ptr::read(&this.ctx) };
+        let family = this.family;
+        let pool_buffer = unsafe { core::ptr::read(&this.pool_buffer) };
+        drop(this); // does not invoke the inner's destructor
+
+        let fence = Fence::new(ctx, FenceFlags::empty())?;
+        let buffer = pool_buffer[1].get();
+        tri! {
+            (Entry::get().end_command_buffer)(buffer)
+        }
+
         let info = vk::SubmitInfo {
             sType: vk::STRUCTURE_TYPE_SUBMIT_INFO,
             pNext: core::ptr::null(),
@@ -58,7 +67,7 @@ impl<'a> Command<'a> {
         };
 
         let queue = 'outer: loop {
-            for queue in family.queues.iter() {
+            for queue in unsafe { family.as_ref() }.queues.iter() {
                 match queue.try_lock() {
                     Ok(x) => break 'outer x,
                     Err(TryLockError::Poisoned(e)) => break 'outer e.into_inner(),
@@ -81,7 +90,7 @@ impl<'a> Command<'a> {
     }
 }
 
-impl Drop for Command<'_> {
+impl<C: ContextRef> Drop for Command<C> {
     #[inline]
     fn drop(&mut self) {
         let v = (Entry::get().end_command_buffer)(self.buffer());

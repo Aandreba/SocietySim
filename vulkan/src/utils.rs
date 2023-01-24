@@ -1,4 +1,4 @@
-use std::{io::{Read, ErrorKind}, ptr::NonNull, sync::atomic::{AtomicUsize, Ordering}, alloc::Layout, ops::Range};
+use std::{io::{Read, ErrorKind}, ptr::NonNull, sync::{atomic::{AtomicUsize, Ordering}}, alloc::Layout, ops::{Range}};
 use docfg::docfg;
 use futures::{AsyncRead, AsyncReadExt};
 

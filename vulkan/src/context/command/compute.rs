@@ -1,6 +1,6 @@
 use super::{Command};
 use crate::{
-    context::{ContextRef, event::Event, Context},
+    context::{ContextRef, event::Event},
     descriptor::DescriptorSet,
     pipeline::{Pipeline, PipelineBindPoint},
     shader::ShaderStages,
@@ -9,20 +9,20 @@ use crate::{
 };
 use std::{
     ffi::c_void,
-    ops::{Bound, Index, RangeBounds},
+    ops::{Bound, Index, RangeBounds}, pin::Pin,
 };
 
 #[derive(Debug)]
-pub struct ComputeCommand<'a, 'b, C: ContextRef> {
-    cmd: Command<'a>,
-    pipeline: &'b Pipeline<C>,
+pub struct ComputeCommand<'b, C: ContextRef, P: ContextRef> {
+    cmd: Command<C>,
+    pipeline: &'b Pipeline<P>,
 }
 
-impl<'a, 'b, C: ContextRef> ComputeCommand<'a, 'b, C> {
+impl<'a, 'b, C: ContextRef, P: ContextRef> ComputeCommand<'b, C, P> {
     #[inline]
     pub(crate) fn new<R: RangeBounds<usize>>(
-        cmd: Command<'a>,
-        pipeline: &'b Pipeline<C>,
+        cmd: Command<C>,
+        pipeline: &'b Pipeline<P>,
         desc_sets: R,
     ) -> Result<Self>
     where
@@ -78,7 +78,7 @@ impl<'a, 'b, C: ContextRef> ComputeCommand<'a, 'b, C> {
     }
 
     #[inline]
-    pub fn dispatch (self, x: u32, y: u32, z: u32) -> Result<Event<&'a Context, ComputeConsumer>> {
+    pub fn dispatch (self, x: u32, y: u32, z: u32) -> Result<Event<Pin<C>, ComputeConsumer>> {
         (Entry::get().cmd_dispatch)(self.cmd.buffer(), x, y, z);
         let fence = self.cmd.submit()?;
         return Ok(Event::new(fence, ComputeConsumer::new()))

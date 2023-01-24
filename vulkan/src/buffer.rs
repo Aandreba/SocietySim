@@ -90,12 +90,25 @@ impl<T, A: DeviceAllocator> Buffer<T, A> {
         return &self.alloc
     }
 
+    // TODO FIX (maybe fixed by https://stackoverflow.com/questions/48867995/how-to-correctly-use-decriptor-sets-for-multiple-interleaving-buffers)
     #[inline]
-    pub fn descriptor (&self) -> vk::DescriptorBufferInfo {
+    pub fn descriptor (&self, bounds: impl RangeBounds<vk::DeviceSize>) -> vk::DescriptorBufferInfo {
+        let offset = match bounds.start_bound() {
+            Bound::Included(x) => Self::BYTES_PER_ELEMENT * x,
+            Bound::Excluded(x) => Self::BYTES_PER_ELEMENT * (x + 1),
+            Bound::Unbounded => 0,
+        };
+
+        let range = match bounds.end_bound() {
+            Bound::Included(x) => (Self::BYTES_PER_ELEMENT * (x + 1)) - offset,
+            Bound::Excluded(x) => (Self::BYTES_PER_ELEMENT * x) - offset,
+            Bound::Unbounded => vk::WHOLE_SIZE,
+        };
+        
         return vk::DescriptorBufferInfo {
             buffer: self.buffer.get(),
-            offset: 0,
-            range: vk::WHOLE_SIZE,
+            offset,
+            range
         }
     }
 
@@ -152,8 +165,8 @@ impl<T, A: DeviceAllocator> Buffer<T, A> {
     }
 
     #[inline]
-    pub unsafe fn into_maybe_uninit (self) -> Buffer<MaybeUninit<T>, A> {
-        self.transmute()
+    pub fn into_maybe_uninit (self) -> Buffer<MaybeUninit<T>, A> {
+        unsafe { self.transmute() }
     }
 }
 

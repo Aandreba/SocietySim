@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ops::{Deref, DerefMut}};
+use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ops::{Deref, DerefMut, RangeBounds}};
 use crate::{utils::usize_to_u32, Result, device::{Device}, Entry, shader::Shader, buffer::Buffer, alloc::DeviceAllocator, context::{ContextRef, Context}};
 
 pub struct Builder<C> {
@@ -84,6 +84,11 @@ impl<C: ContextRef> DescriptorPool<C> {
     pub fn context (&self) -> &Context {
         return &self.context
     }
+
+    #[inline]
+    pub fn owned_context (&self) -> C where C: Clone {
+        return self.context.clone()
+    }
     
     #[inline]
     pub fn device (&self) -> &Device {
@@ -140,7 +145,12 @@ impl<C: ContextRef> DescriptorSets<C> {
 
     #[inline]
     pub fn context (&self) -> &Context {
-        return &self.pool.context()
+        return self.pool.context()
+    }
+
+    #[inline]
+    pub fn owned_context (&self) -> C where C: Clone {
+        return self.pool.owned_context()
     }
     
     #[inline]
@@ -216,7 +226,7 @@ impl DescriptorSet {
     }
 
     #[inline]
-    pub fn write_descriptor<T, A: DeviceAllocator> (&self, buf: &Buffer<T, A>, offset: u32) -> WriteDescriptorSet {
+    pub fn write_descriptor<T, A: DeviceAllocator> (&self, buf: &Buffer<T, A>, bounds: impl RangeBounds<vk::DeviceSize>, offset: u32) -> WriteDescriptorSet {
         let inner = vk::WriteDescriptorSet {
             sType: vk::STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             pNext: core::ptr::null(),
@@ -232,7 +242,7 @@ impl DescriptorSet {
 
         return WriteDescriptorSet {
             inner,
-            buffer: Some(buf.descriptor())
+            buffer: Some(buf.descriptor(bounds))
         }
     }
 }

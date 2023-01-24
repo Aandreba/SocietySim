@@ -377,8 +377,11 @@ unsafe impl<C: ContextRef> DeviceAllocator for RawInner<C> {
                 heapIndex,
             } = props.memoryTypes[i as usize];
             if MemoryFlags::from_bits_truncate(propertyFlags).contains(flags) {
-                info = Some((props.memoryHeaps[heapIndex as usize].size, i));
-                break;
+                let heap = &props.memoryHeaps[heapIndex as usize];
+                if heap.size >= size {
+                    info = Some((heap.size, i));
+                    break;
+                }
             }
         }
 
@@ -541,7 +544,7 @@ impl<C: ContextRef> Page<C> {
             let range = unsafe { ranges.get_unchecked(i) };
             let padding = range.start % align;
             let chunk_size = range.end - range.start;
-            if chunk_size > padding + size {
+            if chunk_size >= padding + size {
                 result = Some((i, padding))
             }
         }
@@ -811,7 +814,7 @@ unsafe impl<C: ContextRef> DeviceAllocator for Book<C> {
         if size > self.range.end {
             #[cfg(debug_assertions)]
             eprintln!(
-                "Tried to allocate too much memory: {} bytes of a maximum of {}",
+                "Tried to allocate too much memory: {} out of a maximum of {}",
                 size.format_size(BINARY), self.range.end.format_size(BINARY)
             );
             return Err(vk::ERROR_OUT_OF_DEVICE_MEMORY.into());

@@ -1,6 +1,6 @@
 use rand::{random};
 use shared::{person::Person, person_event::PersonalEvent, ExternBool};
-use std::{marker::PhantomData, mem::MaybeUninit};
+use std::{marker::PhantomData, mem::MaybeUninit, pin::Pin};
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags},
     buffer::{Buffer, BufferFlags, UsageFlags},
@@ -21,7 +21,7 @@ pub struct PersonalEvents<C: ContextRef> {
     seed: [u32; 4],
 }
 
-impl<C: ContextRef> PersonalEvents<C> {
+impl<C: Clone + Unpin + ContextRef> PersonalEvents<C> {
     #[inline]
     pub fn new(context: C) -> Result<Self>
     where
@@ -52,7 +52,7 @@ impl<C: ContextRef> PersonalEvents<C> {
         &'a mut self,
         people: &'b Buffer<Person, P>,
         events: &'b Buffer<PersonalEvent, E>,
-    ) -> Result<Event<&'a Context, PersonalEventsConsumer<'b, P, E>>> {
+    ) -> Result<Event<Pin<C>, PersonalEventsConsumer<'b, P, E>>> {
         let result = Buffer::<ExternBool, _>::new_uninit(
             people.len() * events.len(),
             UsageFlags::STORAGE_BUFFER,
@@ -63,9 +63,9 @@ impl<C: ContextRef> PersonalEvents<C> {
 
         
         let set: &DescriptorSet = self.pipeline.sets().first().unwrap();
-        let people_desc = set.write_descriptor(people, 0);
-        let events_desc = set.write_descriptor(events, 0);
-        let result_desc = set.write_descriptor(&result, 0);
+        let people_desc = set.write_descriptor(people, .., 0);
+        let events_desc = set.write_descriptor(events, .., 0);
+        let result_desc = set.write_descriptor(&result, .., 0);
         self.pipeline
         .sets_mut()
         .update(&[people_desc, events_desc, result_desc]);
@@ -73,7 +73,7 @@ impl<C: ContextRef> PersonalEvents<C> {
         let seed = core::mem::replace(&mut self.seed, random());
         let event = self
             .pipeline
-            .compute(..)?
+            .compute_owned(..)?
             .push_contant(&seed)
             .dispatch(u64_to_u32(people.len()), u64_to_u32(events.len()), 1)?;
 

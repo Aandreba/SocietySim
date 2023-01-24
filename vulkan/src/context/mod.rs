@@ -11,7 +11,7 @@ use std::{
     num::NonZeroU64,
     ops::{Deref, Index, RangeBounds},
     ptr::{addr_of, addr_of_mut},
-    sync::{Mutex, TryLockError},
+    sync::{Mutex, TryLockError}, pin::Pin,
 };
 
 pub trait ContextRef = Deref<Target = Context>;
@@ -91,9 +91,9 @@ impl Context {
     }
 
     #[inline]
-    fn command (&self, flags: QueueFlags) -> Result<Command<'_>> {
+    fn command_by_deref<T: Deref<Target = Self>> (this: Pin<T>, flags: QueueFlags) -> Result<Command<T>> {
         let (pool, family) = 'outer: loop {
-            for family in self.families.iter() {
+            for family in this.families.iter() {
                 if family.flags.contains(flags) {
                     match family.pool_buffer.try_lock() {
                         Ok(x) => break 'outer (x, family),
@@ -105,7 +105,9 @@ impl Context {
             std::thread::yield_now();
         };
 
-        return Command::new(self, family, pool);
+        let family = family as *const QueueFamily;
+        let pool = unsafe { core::mem::transmute(pool) };
+        return unsafe { Command::new(this, family, pool) };
     }
 }
 
@@ -150,20 +152,20 @@ impl Context {
 
 impl Context {
     #[inline]
-    pub fn compute_command<'b, C: ContextRef, R: RangeBounds<usize>>(
-        &self,
+    pub fn compute_command_by_deref<'b, T: Deref<Target = Self>, C: ContextRef, R: RangeBounds<usize>>(
+        this: Pin<T>,
         pipeline: &'b Pipeline<C>,
         desc_sets: R,
-    ) -> Result<ComputeCommand<'_, 'b, C>>
+    ) -> Result<ComputeCommand<'b, T, C>>
     where
         [DescriptorSet]: Index<R, Output = [DescriptorSet]>,
     {
-        let cmd = self.command(QueueFlags::COMPUTE)?;
+        let cmd = Self::command_by_deref(this, QueueFlags::COMPUTE)?;
         return ComputeCommand::new(cmd, pipeline, desc_sets)
     }
 
     #[inline]
-    pub fn transfer_command<'b> (&self) -> Result<TransferCommand<'_, 'b>> {
-        return self.command(QueueFlags::TRANSFER).map(TransferCommand::new);
+    pub fn transfer_command_by_deref<'b, T: Deref<Target = Self>> (this: Pin<T>) -> Result<TransferCommand<'b, T>> {
+        return Self::command_by_deref(this, QueueFlags::TRANSFER).map(TransferCommand::new);
     }
 }
