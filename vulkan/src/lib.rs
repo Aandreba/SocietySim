@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "alloc", feature(allocator_api))]
-#![feature(get_mut_unchecked, iterator_try_collect, is_some_and, layout_for_ptr, type_alias_impl_trait, ptr_metadata, new_uninit, trait_alias, pointer_byte_offsets)]
+#![feature(allocator_api, get_mut_unchecked, iterator_try_collect, is_some_and, layout_for_ptr, type_alias_impl_trait, ptr_metadata, new_uninit, trait_alias, pointer_byte_offsets)]
 
 //! https://vulkan-tutorial.com/
 
@@ -43,10 +43,11 @@ pub mod r#async;
 //flat_mod! { alloc }
 
 pub type Result<T> = ::core::result::Result<T, error::Error>;
+use ahash::HashMap;
 pub use proc::{include_spv, cstr};
 use vk::get_version;
 
-use std::{marker::{PhantomData}, ffi::{CStr, OsStr, c_char}, ptr::{addr_of, addr_of_mut}, mem::transmute, num::NonZeroU64, fmt::Debug, hash::Hash};
+use std::{marker::{PhantomData}, ffi::{CStr, OsStr, c_char, c_void}, ptr::{addr_of, addr_of_mut}, mem::transmute, num::NonZeroU64, fmt::Debug, hash::Hash, alloc::{Allocator, Layout}, sync::Mutex};
 use libloading::{Library};
 use utils::usize_to_u32;
 use vulkan_bindings::make_version;

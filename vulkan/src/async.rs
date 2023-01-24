@@ -26,6 +26,7 @@ struct Node {
 
 pub struct EventRuntime<C: ContextRef> {
     handle: EventRuntimeHandle<C>,
+    entries: Vec<InnerEntry>
 }
 
 impl<C: Clone + ContextRef> EventRuntime<C> {
@@ -45,7 +46,8 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
             handle: EventRuntimeHandle {
                 queue: Arc::new(FillQueue::new()),
                 context
-            }
+            },
+            entries: Vec::new()
         }
     }
 
@@ -55,22 +57,7 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
     }
 
     pub fn run_to_end (&mut self) {
-        struct Metadata {
-            budget: u64, // in nanos
-            flag: utils_atomics::flag::mpmc::AsyncFlag,
-            result: Weak<vk::Result>, // `Weak` enables abortion detection
-            #[cfg(debug_assertions)]
-            checks: u64
-        }
-
-        struct InnerEntry {
-            fences: Vec<vk::Fence>,
-            data: Vec<Metadata>,
-        }
-
-        let mut entries = Vec::<InnerEntry>::new();
-        let context = self.handle.context.clone();
-
+        self.entries.clear();
         loop {
             // Check if receiver is still open
             for Node {
@@ -83,7 +70,7 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
                 let fence = ManuallyDrop::new(fence);
                 let fence = fence.id();
 
-                entries.push(InnerEntry {
+                self.entries.push(InnerEntry {
                     fences: vec![fence],
                     data: vec![Metadata {
                         budget,
@@ -95,17 +82,17 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
             }
 
             // Check if receiver is still open
-            if Arc::strong_count(&self.queue) == 1 && entries.iter().all(|entry| entry.fences.is_empty()) {
+            if Arc::strong_count(&self.queue) == 1 && self.entries.iter().all(|entry| entry.fences.is_empty()) {
                 break
             }
 
-            for entry in entries.iter_mut() {
+            for entry in self.entries.iter_mut() {
                 if let Some(mut budget) = entry.data.iter().map(|x| x.budget).max() {
                     // Run until budget is consumed
                     loop {
                         let now = Instant::now();
                         let wait = (Entry::get().wait_for_fences)(
-                            context.device().id(),
+                            self.handle.context.device().id(),
                             usize_to_u32(entry.fences.len()),
                             entry.fences.as_ptr(),
                             vk::FALSE,
@@ -131,15 +118,12 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
                                     if let Some(mut result) =
                                         unsafe { entry.data.get_unchecked(i).result.upgrade() }
                                     {
+                                        { entry.data[i].checks += 1 };
                                         match (Entry::get().get_fence_status)(
-                                            context.device().id(),
+                                            self.handle.context.device().id(),
                                             fence,
                                         ) {
-                                            vk::NOT_READY => {
-                                                #[cfg(debug_assertions)]
-                                                { entry.data[i].checks += 1 };
-                                                i += 1
-                                            },
+                                            vk::NOT_READY => i += 1,
 
                                             r => unsafe {
                                                 // IMPL: Although the order is not mainteined, the correlation between the
@@ -153,7 +137,7 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
 
                                                 // Destroy fence
                                                 (Entry::get().destroy_fence)(
-                                                    context.device().id(),
+                                                    self.handle.context.device().id(),
                                                     fence,
                                                     core::ptr::null(),
                                                 );
@@ -173,7 +157,7 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
 
                                         // Destroy fence
                                         (Entry::get().destroy_fence)(
-                                            context.device().id(),
+                                            self.handle.context.device().id(),
                                             fence,
                                             core::ptr::null(),
                                         );
@@ -181,13 +165,15 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
                                 }
 
                                 // Check if there is enough remaining budget
-                                if let Some(remaining) =
-                                    budget.checked_sub(elapsed.as_nanos() as u64)
-                                {
-                                    budget = remaining
-                                } else {
-                                    break;
+                                if entry.fences.len() > 0 {
+                                    if let Some(remaining) =
+                                        budget.checked_sub(elapsed.as_nanos() as u64)
+                                    {
+                                        budget = remaining;
+                                        continue;
+                                    }
                                 }
+                                break;
                             }
                         }
                     }
@@ -227,12 +213,14 @@ impl<C: ContextRef> EventRuntimeHandle<C> {
             return Err(vk::ERROR_DEVICE_LOST.into())
         }
 
+        let fence = ManuallyDrop::new(event.fence);
         let budget = Duration::min(budget, Self::MAX_BUDGET);
         let result = Arc::new(vk::ERROR_UNKNOWN); // protect against unexpected panics by returning ERROR_UNKNOWN if we check the result before it's set
         let (flag, sub) = utils_atomics::flag::mpmc::async_flag();
+
         self.queue.push(Node {
             fence: Fence {
-                inner: event.fence.inner,
+                inner: fence.inner,
                 context: NodeContext(&self.context as &Context),
             },
             budget: budget.as_nanos() as u64,
@@ -302,3 +290,16 @@ impl Deref for NodeContext {
 
 unsafe impl Send for NodeContext where for<'a> &'a Context: Send {}
 unsafe impl Sync for NodeContext where for<'a> &'a Context: Sync {}
+
+struct Metadata {
+    budget: u64, // in nanos
+    flag: utils_atomics::flag::mpmc::AsyncFlag,
+    result: Weak<vk::Result>, // `Weak` enables abortion detection
+    #[cfg(debug_assertions)]
+    checks: u64
+}
+
+struct InnerEntry {
+    fences: Vec<vk::Fence>,
+    data: Vec<Metadata>,
+}

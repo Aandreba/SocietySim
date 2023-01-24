@@ -55,11 +55,10 @@ fn main() -> anyhow::Result<()> {
             println!("Ran until the end");
         });
 
-        return anyhow::Ok((runtime.block_on(people)?, ((), ())));
-        /*return runtime.block_on(try_join(
+        return runtime.block_on(try_join(
             people.map_err(Into::into),
             initialize_personal_events("game/personal_events", &alloc),
-        ));*/
+        ));
     })?;
 
     // let mut evt = PersonalEvents::new(&ctx)?;

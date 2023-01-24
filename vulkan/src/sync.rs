@@ -2,7 +2,7 @@ use crate::{context::{ContextRef, Context}, device::Device, Entry, Result};
 use std::{
     num::NonZeroU64,
     ptr::{addr_of, addr_of_mut},
-    time::Duration,
+    time::Duration, ffi::c_void,
 };
 
 #[derive(Debug, PartialEq, Eq, Hash)]
