@@ -1,0 +1,11 @@
+{
+    "insomnia": (
+        init_chance: (
+            base: 0.001 // 1 over 100
+        ),
+
+        effects: (
+            health: -2
+        )
+    )
+}

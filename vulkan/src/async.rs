@@ -1,7 +1,7 @@
 use crate::{
     context::{
         event::{consumer::EventConsumer, Event},
-        ContextRef, Context,
+        Context, ContextRef,
     },
     sync::Fence,
     utils::usize_to_u32,
@@ -11,11 +11,41 @@ use futures::Future;
 use pin_project::pin_project;
 use std::{
     mem::ManuallyDrop,
+    ops::Deref,
+    pin::Pin,
     sync::{Arc, Weak},
     task::Poll,
-    time::{Duration, Instant}, pin::Pin, ops::Deref,
+    thread::Scope,
+    time::{Duration, Instant},
 };
 use utils_atomics::FillQueue;
+
+#[macro_export]
+macro_rules! join_events {
+    ($evt1:ident, $($evt:ident),+) => {{
+        // Check all events share the same device
+        debug_assert!(
+            [$($crate::context::event::Event::device(&$evt)),+].into_iter().all(|x| x == $crate::context::event::Event::device(&$evt1))
+        );
+
+        let fences = [$crate::context::event::Event::id(&$evt1), $($crate::context::event::Event::id(&$evt)),+];
+        loop {
+            match ($crate::Entry::get().wait_for_fences)(
+                $evt1.device().id(), // device
+                $crate::utils::usize_to_u32(fences.len()),
+                fences.as_ptr(),
+                $crate::vk::TRUE,
+                u64::MAX // timeout
+            ) {
+                $crate::vk::SUCCESS => unsafe {
+                    break Ok(($crate::context::event::Event::consume_unchecked($evt1), $($crate::context::event::Event::consume_unchecked($evt)),+))
+                },
+                $crate::vk::TIMEOUT => {},
+                e => break Err($crate::error::Error::from(e))
+            }
+        }
+    }};
+}
 
 struct Node {
     fence: Fence<NodeContext>,
@@ -26,37 +56,43 @@ struct Node {
 
 pub struct EventRuntime<C: ContextRef> {
     handle: EventRuntimeHandle<C>,
-    entries: Vec<InnerEntry>
+    entries: Vec<InnerEntry>,
 }
 
 impl<C: Clone + ContextRef> EventRuntime<C> {
     #[inline]
-    pub fn new (context: C) -> Self where C: Unpin {
-        return Self::new_pinned(Pin::new(context))
+    pub fn new(context: C) -> Self
+    where
+        C: Unpin,
+    {
+        return Self::new_pinned(Pin::new(context));
     }
 
     #[inline]
-    pub unsafe fn new_unchecked (context: C) -> Self  {
-        return Self::new_pinned(Pin::new_unchecked(context))
+    pub unsafe fn new_unchecked(context: C) -> Self {
+        return Self::new_pinned(Pin::new_unchecked(context));
     }
-    
+
     #[inline]
-    pub fn new_pinned (context: Pin<C>) -> Self {
+    pub fn new_pinned(context: Pin<C>) -> Self {
         return Self {
             handle: EventRuntimeHandle {
                 queue: Arc::new(FillQueue::new()),
-                context
+                context,
             },
-            entries: Vec::new()
-        }
+            entries: Vec::new(),
+        };
     }
 
     #[inline]
-    pub fn handle(&self) -> EventRuntimeHandle<C> where C: Clone {
+    pub fn handle(&self) -> EventRuntimeHandle<C>
+    where
+        C: Clone,
+    {
         self.handle.clone()
     }
 
-    pub fn run_to_end (&mut self) {
+    pub fn run_to_end(&mut self) {
         self.entries.clear();
         loop {
             // Check if receiver is still open
@@ -76,14 +112,17 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
                         budget,
                         flag,
                         result,
-                        #[cfg(debug_assertions)] checks: 0
+                        #[cfg(debug_assertions)]
+                        checks: 0,
                     }],
                 });
             }
 
             // Check if receiver is still open
-            if Arc::strong_count(&self.queue) == 1 && self.entries.iter().all(|entry| entry.fences.is_empty()) {
-                break
+            if Arc::strong_count(&self.queue) == 1
+                && self.entries.iter().all(|entry| entry.fences.is_empty())
+            {
+                break;
             }
 
             for entry in self.entries.iter_mut() {
@@ -106,8 +145,8 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
                                 for data in entry.data.iter_mut() {
                                     data.checks += 1
                                 }
-                                break
-                            },
+                                break;
+                            }
                             _ => {
                                 // Find and treat with all completed/errored fences
                                 let mut i = 0;
@@ -118,7 +157,9 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
                                     if let Some(mut result) =
                                         unsafe { entry.data.get_unchecked(i).result.upgrade() }
                                     {
-                                        { entry.data[i].checks += 1 };
+                                        {
+                                            entry.data[i].checks += 1
+                                        };
                                         match (Entry::get().get_fence_status)(
                                             self.handle.context.device().id(),
                                             fence,
@@ -133,7 +174,10 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
 
                                                 // Print number of checks
                                                 #[cfg(debug_assertions)]
-                                                println!("fence {fence} has been checked {} times", data.checks);
+                                                println!(
+                                                    "fence {fence} has been checked {} times",
+                                                    data.checks
+                                                );
 
                                                 // Destroy fence
                                                 (Entry::get().destroy_fence)(
@@ -181,6 +225,20 @@ impl<C: Clone + ContextRef> EventRuntime<C> {
             }
         }
     }
+
+    #[inline]
+    pub fn run_along<'env, T, F: for<'scope> FnOnce(&'scope Scope<'scope, 'env>) -> T>(
+        &'env mut self,
+        f: F,
+    ) -> T
+    where
+        C: Send,
+    {
+        std::thread::scope(|s| {
+            s.spawn(|| self.run_to_end());
+            f(s)
+        })
+    }
 }
 
 impl<C: ContextRef> Deref for EventRuntime<C> {
@@ -195,7 +253,7 @@ impl<C: ContextRef> Deref for EventRuntime<C> {
 /// Handle to interect with a running [`FenceRuntime`]
 pub struct EventRuntimeHandle<C: ContextRef> {
     queue: Arc<FillQueue<Node>>,
-    context: Pin<C>
+    context: Pin<C>,
 }
 
 impl<C: ContextRef> EventRuntimeHandle<C> {
@@ -209,8 +267,12 @@ impl<C: ContextRef> EventRuntimeHandle<C> {
     ) -> Result<EventWait<F>> {
         if event.device() != self.context.device() {
             #[cfg(debug_assertions)]
-            eprintln!("{:#?} is should be the same device as {:#?}", event.device(), self.context.device());
-            return Err(vk::ERROR_DEVICE_LOST.into())
+            eprintln!(
+                "{:#?} is should be the same device as {:#?}",
+                event.device(),
+                self.context.device()
+            );
+            return Err(vk::ERROR_DEVICE_LOST.into());
         }
 
         let fence = ManuallyDrop::new(event.fence);
@@ -241,7 +303,7 @@ impl<C: Clone + ContextRef> Clone for EventRuntimeHandle<C> {
     fn clone(&self) -> Self {
         Self {
             queue: self.queue.clone(),
-            context: self.context.clone()
+            context: self.context.clone(),
         }
     }
 }
@@ -277,7 +339,7 @@ impl<F: EventConsumer> Future for EventWait<F> {
     }
 }
 
-struct NodeContext (*const Context);
+struct NodeContext(*const Context);
 
 impl Deref for NodeContext {
     type Target = Context;
@@ -296,7 +358,7 @@ struct Metadata {
     flag: utils_atomics::flag::mpmc::AsyncFlag,
     result: Weak<vk::Result>, // `Weak` enables abortion detection
     #[cfg(debug_assertions)]
-    checks: u64
+    checks: u64,
 }
 
 struct InnerEntry {

@@ -1,5 +1,4 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![cfg_attr(feature = "alloc", feature(allocator_api))]
 #![feature(allocator_api, get_mut_unchecked, iterator_try_collect, is_some_and, layout_for_ptr, type_alias_impl_trait, ptr_metadata, new_uninit, trait_alias, pointer_byte_offsets)]
 
 //! https://vulkan-tutorial.com/
@@ -24,7 +23,8 @@ macro_rules! flat_mod {
     };
 }
 
-pub(crate) extern crate vulkan_bindings as vk;
+#[doc(hidden)]
+pub extern crate vulkan_bindings as vk;
 
 pub mod error;
 pub mod physical_dev;
@@ -120,6 +120,7 @@ proc::entry! {
     "vkQueueBindSparse",
     "vkGetMemoryHostPointerPropertiesEXT",
     "vkCmdCopyBuffer",
+    "vkCmdUpdateBuffer",
     // Destructors
     "vkDestroyInstance",
     "vkDestroyDevice",

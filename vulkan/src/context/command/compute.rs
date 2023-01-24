@@ -12,6 +12,7 @@ use std::{
     ops::{Bound, Index, RangeBounds},
 };
 
+#[derive(Debug)]
 pub struct ComputeCommand<'a, 'b, C: ContextRef> {
     cmd: Command<'a>,
     pipeline: &'b Pipeline<C>,

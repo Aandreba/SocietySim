@@ -11,7 +11,7 @@ pub struct Buffer<T, A: DeviceAllocator> {
 }
 
 impl<T, A: DeviceAllocator> Buffer<T, A> {
-    const BYTES_PER_ELEMENT: vk::DeviceSize = core::mem::size_of::<T>() as vk::DeviceSize;
+    pub const BYTES_PER_ELEMENT: vk::DeviceSize = core::mem::size_of::<T>() as vk::DeviceSize;
 
     pub fn new_uninit (capacity: DeviceSize, usage: UsageFlags, flags: BufferFlags, memory_flags: MemoryFlags, alloc: A) -> Result<Buffer<MaybeUninit<T>, A>> {
         let entry = Entry::get();

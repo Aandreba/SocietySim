@@ -1,6 +1,6 @@
 #![feature(iterator_try_collect, iter_intersperse)]
 
-use std::{ffi::{CString}, ops::Deref, fs::File, env::join_paths, path::Path};
+use std::{ffi::{CString}, ops::Deref, fs::File};
 use derive_syn_parse::Parse;
 use proc_macro2::{Span};
 use quote::{quote, format_ident};
@@ -109,12 +109,12 @@ pub fn entry (item: proc_macro::TokenStream) -> proc_macro::TokenStream {
             lib: Library,
             instance: NonZeroU64,
             #[cfg(unix)]
-            pub(crate) get_instance_proc_addr: libloading::os::unix::Symbol<vk::FnGetInstanceProcAddr>,
+            pub get_instance_proc_addr: libloading::os::unix::Symbol<vk::FnGetInstanceProcAddr>,
             #[cfg(windows)]
-            pub(crate) get_instance_proc_addr: libloading::os::windows::Symbol<vk::FnGetInstanceProcAddr>,
-            pub(crate) create_instance: vk::FnCreateInstance,
+            pub get_instance_proc_addr: libloading::os::windows::Symbol<vk::FnGetInstanceProcAddr>,
+            pub create_instance: vk::FnCreateInstance,
             #(
-                pub(crate) #lower_case: vk::#fn_types
+                pub #lower_case: vk::#fn_types
             ),*
         }
 

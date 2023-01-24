@@ -35,6 +35,34 @@ impl f32x2 {
     }
 }
 
+impl Add for f32x2 {
+    type Output = f32x2;
+
+    #[cfg(target_arch = "spirv")]
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        unsafe {
+            let mut inner = spirv_std::glam::Vec2::default();
+            asm! {
+                "%lhs = OpLoad _ {lhs}",
+                "%rhs = OpLoad _ {rhs}",
+                "%result = OpFAdd _ %lhs %rhs",
+                "OpStore {result} %result",
+                lhs = in(reg) &self.inner,
+                rhs = in(reg) &rhs.inner,
+                result = in(reg) &mut inner
+            }
+            return Self { inner }
+        }
+    }
+
+    #[cfg(not(target_arch = "spirv"))]
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        return Self { inner: self.inner + rhs.inner }
+    }
+}
+
 impl Mul for f32x2 {
     type Output = f32x2;
 
@@ -98,6 +126,34 @@ impl f32x3 {
     }
 }
 
+impl Add for f32x3 {
+    type Output = f32x3;
+
+    #[cfg(target_arch = "spirv")]
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        unsafe {
+            let mut inner = spirv_std::glam::Vec3::default();
+            asm! {
+                "%lhs = OpLoad _ {lhs}",
+                "%rhs = OpLoad _ {rhs}",
+                "%result = OpFAdd _ %lhs %rhs",
+                "OpStore {result} %result",
+                lhs = in(reg) &self.inner,
+                rhs = in(reg) &rhs.inner,
+                result = in(reg) &mut inner
+            }
+            return Self { inner }
+        }
+    }
+
+    #[cfg(not(target_arch = "spirv"))]
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        return Self { inner: self.inner + rhs.inner }
+    }
+}
+
 impl Mul for f32x3 {
     type Output = f32x3;
 
@@ -154,6 +210,34 @@ impl f32x4 {
         return core::simd::SimdFloat::reduce_sum(self.inner);
         #[cfg(target_arch = "spirv")]
         return self.inner.x + self.inner.y + self.inner.z + self.inner.w
+    }
+}
+
+impl Add for f32x4 {
+    type Output = f32x4;
+
+    #[cfg(target_arch = "spirv")]
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        unsafe {
+            let mut inner = spirv_std::glam::Vec4::default();
+            asm! {
+                "%lhs = OpLoad _ {lhs}",
+                "%rhs = OpLoad _ {rhs}",
+                "%result = OpFAdd _ %lhs %rhs",
+                "OpStore {result} %result",
+                lhs = in(reg) &self.inner,
+                rhs = in(reg) &rhs.inner,
+                result = in(reg) &mut inner
+            }
+            return Self { inner }
+        }
+    }
+
+    #[cfg(not(target_arch = "spirv"))]
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        return Self { inner: self.inner + rhs.inner }
     }
 }
 

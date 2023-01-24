@@ -22,6 +22,11 @@ impl<C: ContextRef, N: EventConsumer> Event<C, N> {
     }
 
     #[inline]
+    pub fn id (&self) -> u64 {
+        return self.fence.id()
+    }
+
+    #[inline]
     pub fn context (&self) -> &Context {
         return self.fence.context()
     }
@@ -29,6 +34,11 @@ impl<C: ContextRef, N: EventConsumer> Event<C, N> {
     #[inline]
     pub fn device (&self) -> &Device {
         return self.fence.device()
+    }
+
+    #[inline]
+    pub unsafe fn consume_unchecked (self) -> N::Output {
+        return self.c.consume()
     }
 
     #[inline]
