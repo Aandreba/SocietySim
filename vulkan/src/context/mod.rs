@@ -184,7 +184,6 @@ impl Context {
 
 impl Drop for Context {
     fn drop(&mut self) {
-        #[inline]
         fn drop_family(device: &Device, family: &mut QueueFamily) {
             let [pool, buffer] = match family.pool_buffer.get_mut() {
                 Ok(x) => x,
