@@ -53,7 +53,8 @@ impl Random {
         const JUMP: [u32; 4] = [0x8764000b, 0xf542d2d3, 0x6fa035c3, 0x77f2db5b];
 
         let mut result = u32x4::default();
-        for j in JUMP {
+        for i in 0..JUMP.len() {
+            let j = JUMP[i];
             for b in 0..32 {
                 if (j & 1u32) << b != 0 {
                     result ^= self.inner
