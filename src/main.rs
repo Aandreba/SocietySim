@@ -1,5 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(trait_alias, ptr_metadata, iterator_try_collect, rustc_attrs)]
+#![feature(trait_alias, new_uninit, ptr_metadata, iterator_try_collect, rustc_attrs)]
 
 use population::{Population, PopulationAllocator};
 use shared::population::GenerationOps;
@@ -39,7 +39,7 @@ fn main() -> anyhow::Result<()> {
     loop {
         match first_menu(&population)? {
             MenuOptions::Stats => {
-                println!("Population stats: {:#?}", population.stats()?);
+                println!("Population stats: {:#?}", population.mean_stats()?);
             }
             MenuOptions::Exit => return Ok(()),
         }

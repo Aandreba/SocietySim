@@ -12,6 +12,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .extension("SPV_KHR_non_semantic_info")
         .capability(Capability::Int8)
         .capability(Capability::Int16)
+        .capability(Capability::Int64)
+        .capability(Capability::Int64Atomics)
         .capability(Capability::VariablePointersStorageBuffer)
         .build()?;
     Ok(())

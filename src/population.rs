@@ -1,8 +1,8 @@
-use crate::game::{generate_people::GeneratePeople, population_stats::CalcPopulationStats};
+use crate::game::{generate_people::GeneratePeople, population_stats::{CalcPopulationMeanStats, CalcPopulationCountStats}};
 use elor::Either;
 use humansize::BINARY;
-use shared::{person::{Person, PersonStats}, population::GenerationOps};
-use std::mem::MaybeUninit;
+use shared::{person::{Person, PersonStats}, population::{GenerationOps, PopulationCountStats}};
+use std::{mem::MaybeUninit, ops::{Deref, DerefMut}};
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags},
     buffer::{Buffer, BufferFlags, UsageFlags},
@@ -32,7 +32,8 @@ pub trait PopulationAllocator =
     Clone + DeviceAllocator where <Self as DeviceAllocator>::Context: Clone + Unpin;
 
 struct PopulationShaders<C: ContextRef> {
-    stats: CalcPopulationStats<C>,
+    stats_mean: CalcPopulationMeanStats<C>,
+    stats_count: CalcPopulationCountStats<C>,
 }
 
 pub struct Population<A: PopulationAllocator> {
@@ -113,7 +114,8 @@ impl<A: PopulationAllocator> Population<A> {
         }
 
         let shaders = PopulationShaders {
-            stats: CalcPopulationStats::new(alloc.owned_context())?,
+            stats_mean: CalcPopulationMeanStats::new(alloc.owned_context())?,
+            stats_count: CalcPopulationCountStats::new(alloc.owned_context())?,
         };
 
         drop(init);
@@ -153,9 +155,9 @@ impl<A: PopulationAllocator> Population<A> {
     }
 
     #[inline]
-    pub fn stats(&mut self) -> Result<PopulationStats> {
+    pub fn mean_stats(&mut self) -> Result<PopulationMeanStats> {
         let result = Buffer::from_sized_iter(
-            [shared::population::PopulationStats::default()],
+            [shared::population::PopulationMeanStats::default()],
             UsageFlags::STORAGE_BUFFER,
             BufferFlags::empty(),
             MemoryFlags::MAPABLE,
@@ -163,12 +165,42 @@ impl<A: PopulationAllocator> Population<A> {
         )?;
 
         let events = iter!(self)
-            .map(|(len, people)| self.shaders.stats.call(&result, people, len))
+            .map(|(len, people)| self.shaders.stats_mean.call(&result, people, len))
             .try_collect::<Vec<_>>()?;
 
         let _ = Event::join_all(events)?;
         let map = result.map(..)?;
-        return Ok(PopulationStats::from_stats(self, map[0]));
+        return Ok(PopulationMeanStats::from_stats(self, map[0]));
+    }
+
+    #[inline]
+    pub fn count_stats (&mut self) -> Result<Box<PopulationCountStats>> {
+        let mut result = Buffer::new_uninit(
+            1,
+            UsageFlags::STORAGE_BUFFER,
+            BufferFlags::empty(),
+            MemoryFlags::MAPABLE,
+            &self.alloc,
+        )?;
+
+        let mut map = result.map_mut(..)?;
+        unsafe {
+            map.align_to_mut::<u8>().1.fill(0);
+        }
+        drop(map);
+
+        let result = unsafe { result.assume_init() };
+        let events = iter!(self)
+            .map(|(len, people)| self.shaders.stats_count.call(&result, people, len))
+            .try_collect::<Vec<_>>()?;
+
+        let _ = Event::join_all(events)?;
+        let mut alloc = Box::new_uninit();
+        let map = result.map(..)?;
+        unsafe { core::ptr::copy_nonoverlapping(map.as_ptr(), alloc.as_mut_ptr(), core::mem::size_of::<PopulationCountStats>()) };
+        drop(map);
+
+        return unsafe { Ok(alloc.assume_init()) };
     }
 
     #[inline]
@@ -188,16 +220,16 @@ impl<A: PopulationAllocator> Population<A> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PopulationStats {
+pub struct PopulationMeanStats {
     males: f32,
     stats: PersonStats<f32>,
 }
 
-impl PopulationStats {
+impl PopulationMeanStats {
     #[inline]
     pub fn from_stats<A: PopulationAllocator>(
         pops: &Population<A>,
-        stats: shared::population::PopulationStats,
+        stats: shared::population::PopulationMeanStats,
     ) -> Self {
         const WEIGHT: f32 = 100.0 / 255.0;
         let len = pops.len() as f32;

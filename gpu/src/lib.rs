@@ -14,7 +14,7 @@ use rand::Random;
 use shared::{
     consts::GeneratePeopleConsts,
     person::{Person, PersonStats},
-    population::PopulationStats,
+    population::{PopulationMeanStats, PopulationCountStats, MAX_AGE},
     time::GameDuration,
     ExternBool,
 };
@@ -69,10 +69,10 @@ pub fn generate_people(
 }
 
 #[spirv(compute(threads(1)))]
-pub fn population_stats(
+pub fn population_mean_stats(
     #[spirv(global_invocation_id)] id: UVec3,
     #[spirv(storage_buffer, descriptor_set = 0, binding = 0)] people: &[Person],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] stats: &mut PopulationStats,
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] stats: &mut PopulationMeanStats,
 ) {
     let person = &people[id.x as usize];
     if person.is_male.get() {
@@ -81,17 +81,42 @@ pub fn population_stats(
 
     unsafe {
         let _ =
-            atomic_i_add::<_, 2, 0>(&mut stats.stats.cordiality, person.stats.cordiality as u32);
-        let _ = atomic_i_add::<_, 2, 0>(&mut stats.stats.finesse, person.stats.finesse as u32);
+            atomic_i_add::<_, 2, 0>(&mut stats.stats.cordiality, person.stats.cordiality as u64);
+        let _ = atomic_i_add::<_, 2, 0>(&mut stats.stats.finesse, person.stats.finesse as u64);
         let _ = atomic_i_add::<_, 2, 0>(
             &mut stats.stats.gullability,
-            person.stats.gullability as u32,
+            person.stats.gullability as u64,
         );
-        let _ = atomic_i_add::<_, 2, 0>(&mut stats.stats.health, person.stats.health as u32);
+        let _ = atomic_i_add::<_, 2, 0>(&mut stats.stats.health, person.stats.health as u64);
         let _ = atomic_i_add::<_, 2, 0>(
             &mut stats.stats.intelligence,
-            person.stats.intelligence as u32,
+            person.stats.intelligence as u64,
         );
-        let _ = atomic_i_add::<_, 2, 0>(&mut stats.stats.knowledge, person.stats.knowledge as u32);
+        let _ = atomic_i_add::<_, 2, 0>(&mut stats.stats.knowledge, person.stats.knowledge as u64);
+    }
+}
+
+#[spirv(compute(threads(1)))]
+pub fn population_count_stats(
+    #[spirv(global_invocation_id)] id: UVec3,
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 0)] people: &[Person],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] stats: &mut PopulationCountStats,
+) {
+    let person = &people[id.x as usize];
+    
+    if person.is_male.get() {
+        unsafe { atomic_i_add::<_, 2, 0>(&mut stats.males, 1) };
+    }
+
+    let age_idx = usize::min(person.age.as_years() as usize, MAX_AGE);
+    unsafe { atomic_i_add::<_, 2, 0>(&mut stats.ages[age_idx], 1) };
+
+    unsafe {
+        atomic_i_add::<_, 2, 0>(&mut stats.stats.cordiality[person.stats.cordiality as usize], 1);
+        atomic_i_add::<_, 2, 0>(&mut stats.stats.finesse[person.stats.finesse as usize], 1);
+        atomic_i_add::<_, 2, 0>(&mut stats.stats.gullability[person.stats.gullability as usize], 1);
+        atomic_i_add::<_, 2, 0>(&mut stats.stats.health[person.stats.health as usize], 1);
+        atomic_i_add::<_, 2, 0>(&mut stats.stats.intelligence[person.stats.intelligence as usize], 1);
+        atomic_i_add::<_, 2, 0>(&mut stats.stats.knowledge[person.stats.knowledge as usize], 1);
     }
 }
