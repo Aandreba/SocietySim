@@ -1,7 +1,7 @@
 use crate::game::{generate_people::GeneratePeople, population_stats::CalcPopulationStats};
 use elor::Either;
 use humansize::BINARY;
-use shared::person::{Person, PersonStats};
+use shared::{person::{Person, PersonStats}, population::GenerationOps};
 use std::mem::MaybeUninit;
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags},
@@ -46,7 +46,7 @@ pub struct Population<A: PopulationAllocator> {
 
 impl<A: PopulationAllocator> Population<A> {
     #[inline]
-    pub fn new(people: u64, alloc: A) -> Result<Self> {
+    pub fn new(people: u64, ops: GenerationOps, alloc: A) -> Result<Self> {
         let props = alloc.device().physical().properties();
         let chunk_size = props.max_allocation_size()
             / (props.limits().maxMemoryAllocationCount as u64
@@ -86,6 +86,7 @@ impl<A: PopulationAllocator> Population<A> {
 
         for _ in 0..div {
             events.push(init.generate(
+                ops,
                 chunk_size,
                 UsageFlags::STORAGE_BUFFER,
                 BufferFlags::empty(),
@@ -108,8 +109,7 @@ impl<A: PopulationAllocator> Population<A> {
                 alloc.clone(),
             )?;
 
-            init.initialize(&mut rem_people, ..u64_to_u32(rem))?
-                .wait()?;
+            init.initialize(ops, &mut rem_people, ..u64_to_u32(rem))?.wait()?;
             chunks.push(rem_people);
         }
 
@@ -156,7 +156,7 @@ impl<A: PopulationAllocator> Population<A> {
     #[inline]
     pub fn stats(&mut self) -> Result<PopulationStats> {
         let result = Buffer::from_sized_iter(
-            [shared::person::stats::PopulationStats::default()],
+            [shared::population::PopulationStats::default()],
             UsageFlags::STORAGE_BUFFER,
             BufferFlags::empty(),
             MemoryFlags::MAPABLE,
@@ -198,18 +198,20 @@ impl PopulationStats {
     #[inline]
     pub fn from_stats<A: PopulationAllocator>(
         pops: &Population<A>,
-        stats: shared::person::stats::PopulationStats,
+        stats: shared::population::PopulationStats,
     ) -> Self {
+        const WEIGHT: f32 = 100.0 / 255.0;
         let len = pops.len() as f32;
+
         return Self {
             males: 100.0 * (stats.males as f32) / len,
             stats: PersonStats {
-                cordiality: (stats.stats.cordiality as f32) / len,
-                intelligence: (stats.stats.intelligence as f32) / len,
-                knowledge: (stats.stats.knowledge as f32) / len,
-                finesse: (stats.stats.finesse as f32) / len,
-                gullability: (stats.stats.gullability as f32) / len,
-                health: (stats.stats.health as f32) / len,
+                cordiality: WEIGHT * (stats.stats.cordiality as f32) / len,
+                intelligence: WEIGHT * (stats.stats.intelligence as f32) / len,
+                knowledge: WEIGHT * (stats.stats.knowledge as f32) / len,
+                finesse: WEIGHT * (stats.stats.finesse as f32) / len,
+                gullability: WEIGHT * (stats.stats.gullability as f32) / len,
+                health: WEIGHT * (stats.stats.health as f32) / len,
             },
         };
     }

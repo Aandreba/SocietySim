@@ -2,6 +2,7 @@
 #![feature(trait_alias, ptr_metadata, iterator_try_collect, rustc_attrs)]
 
 use population::{Population, PopulationAllocator};
+use shared::population::GenerationOps;
 use std::io::Write;
 use std::str::FromStr;
 use vulkan::{
@@ -33,7 +34,7 @@ fn main() -> anyhow::Result<()> {
     let phy = PhysicalDevice::first()?;
     let ctx = Context::new(phy)?;
     let alloc = Book::new(&ctx, None, None);
-    let mut population = Population::new(20_000, &alloc)?;
+    let mut population = Population::new(20_000, GenerationOps::default(), &alloc)?;
 
     loop {
         match first_menu(&population)? {
@@ -96,7 +97,7 @@ fn disassemble() -> anyhow::Result<()> {
             .output()?;
 
         if cmd.status.success() {
-            std::fs::write(name.as_ref().with_extension("c"), cmd.stdout)?;
+            std::fs::write(name.as_ref().with_extension("cpp"), cmd.stdout)?;
         } else {
             std::io::copy(&mut cmd.stderr.as_slice(), &mut std::io::stderr())?;
         }

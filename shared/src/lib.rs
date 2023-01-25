@@ -1,11 +1,21 @@
 #![cfg_attr(target_arch = "spirv", no_std, feature(asm_experimental_arch))]
 #![feature(portable_simd)]
 
+macro_rules! flat_mod {
+    ($($i:ident),+) => {
+        $(
+            mod $i;
+            pub use $i::*;  
+        )+
+    }
+}
+
 pub mod time;
 pub mod person;
 pub mod simd;
 pub mod chance;
 pub mod consts;
+pub mod population;
 //pub mod sync;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]

@@ -1,5 +1,5 @@
 use rand::random;
-use shared::{person::Person, consts::GeneratePeopleConsts};
+use shared::{person::Person, consts::GeneratePeopleConsts, population::GenerationOps};
 use std::{mem::MaybeUninit, ops::RangeBounds, pin::Pin};
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags},
@@ -39,6 +39,7 @@ impl<C: Clone + Unpin + ContextRef> GeneratePeople<C> {
     #[inline]
     pub fn generate<A: DeviceAllocator>(
         &mut self,
+        ops: GenerationOps,
         len: u64,
         usage: UsageFlags,
         flags: BufferFlags,
@@ -52,6 +53,7 @@ impl<C: Clone + Unpin + ContextRef> GeneratePeople<C> {
         self.pipeline.sets_mut().update(&[people_desc]);
 
         let consts = GeneratePeopleConsts {
+            ops,
             seed: core::mem::replace(&mut self.seed, random()),
             offset: 0
         };
@@ -69,6 +71,7 @@ impl<C: Clone + Unpin + ContextRef> GeneratePeople<C> {
     #[inline]
     pub fn initialize<'a, A: DeviceAllocator>(
         &mut self,
+        ops: GenerationOps,
         people: &'a mut Buffer<MaybeUninit<Person>, A>,
         bounds: impl RangeBounds<u32>,
     ) -> Result<Event<Pin<C>, InitializePeopleConsumer<'a, A>>> {
@@ -90,6 +93,7 @@ impl<C: Clone + Unpin + ContextRef> GeneratePeople<C> {
 
         let consts = GeneratePeopleConsts {
             seed: core::mem::replace(&mut self.seed, random()),
+            ops,
             offset
         };
 

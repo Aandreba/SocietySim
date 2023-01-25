@@ -73,7 +73,43 @@ pub trait FloatMath {
     ///
     /// assert!(abs_difference <= f32::EPSILON);
     /// ```
-    fn cos (self) -> Self; 
+    fn cos (self) -> Self;
+
+    /// Returns the square root of a number.
+    ///
+    /// Returns NaN if `self` is a negative number other than `-0.0`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let positive = 4.0_f32;
+    /// let negative = -4.0_f32;
+    /// let negative_zero = -0.0_f32;
+    ///
+    /// let abs_difference = (positive.sqrt() - 2.0).abs();
+    ///
+    /// assert!(abs_difference <= f32::EPSILON);
+    /// assert!(negative.sqrt().is_nan());
+    /// assert!(negative_zero.sqrt() == negative_zero);
+    /// ```
+    fn sqrt(self) -> Self;
+
+    /// Returns the natural logarithm of the number.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let one = 1.0f32;
+    /// // e^1
+    /// let e = one.exp();
+    ///
+    /// // ln(e) - 1 == 0
+    /// let abs_difference = (e.ln() - 1.0).abs();
+    ///
+    /// assert!(abs_difference <= f32::EPSILON);
+    /// ```
+    fn ln(self) -> Self;
+
 }
 
 // Ids from https://registry.khronos.org/SPIR-V/specs/unified1/GLSL.std.450.html
@@ -84,7 +120,9 @@ macro_rules! impl_math {
                 impl_mono! {
                     fract as 10,
                     sin as 13,
-                    cos as 14
+                    cos as 14,
+                    sqrt as 31,
+                    ln as 28
                 }
             }
         )+

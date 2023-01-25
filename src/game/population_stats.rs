@@ -1,4 +1,4 @@
-use shared::person::{stats::PopulationStats, Person};
+use shared::{person::{Person}, population::PopulationStats};
 use std::{mem::MaybeUninit, pin::Pin};
 use vulkan::{
     alloc::{DeviceAllocator},

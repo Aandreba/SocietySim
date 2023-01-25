@@ -1,18 +1,22 @@
 use core::ops::AddAssign;
-
-use shared::simd::{u32x4};
-use crate::math::CheckedArith;
+use shared::simd::{u32x4, f32x2};
+use crate::math::{CheckedArith, FloatMath};
 
 #[derive(Clone, Copy)]
-#[repr(transparent)]
 pub struct Random {
-    inner: u32x4
+    inner: u32x4,
+    gaussian: f32,
+    has_next: bool
 }
 
 impl Random {
     #[inline]
     pub const fn from_seed (seed: [u32; 4]) -> Self {
-        return Self { inner: u32x4::from_array(seed) }
+        return Self {
+            inner: u32x4::from_array(seed),
+            gaussian: 0.0,
+            has_next: false
+        }
     }
 
     #[inline]
@@ -115,12 +119,37 @@ impl Random {
     #[cfg(target_feature = "Float64")]
     #[inline]
     pub fn next_f64 (&mut self) -> f64 {
-        const SIZE: u32 = 32;
-        const PRECISION: u32 = f32::MANTISSA_DIGITS;
+        const SIZE: u32 = 64;
+        const PRECISION: u32 = f64::MANTISSA_DIGITS;
         const SCALE: f64 = 1.0 / (((1 as u64) << PRECISION) as f64);
 
         let mut value = self.next_u64();
         value >>= SIZE - PRECISION;
         return SCALE * ((value + 1) as f64)
+    }
+}
+
+impl Random {
+    pub fn next_gaussian (&mut self, std: f32, mean: f32) -> f32 {
+        if self.has_next {
+            self.has_next = false;
+            return self.gaussian
+        }
+
+        let mut v: f32x2;
+        let mut s: f32;
+
+        loop {
+            v = 2.0 * f32x2::from_array([self.next_f32(), self.next_f32()]) - f32x2::from_array([1.0; 2]);
+            s = v.dot(v);
+            if s < 1.0 && s != 0.0 { break }
+        }
+
+        let multiplier = FloatMath::sqrt(-2.0 * FloatMath::ln(s) / s);
+        v = v * multiplier;
+
+        self.has_next = true;
+        self.gaussian = v.y();
+        return std * v.x() + mean
     }
 }

@@ -1,4 +1,4 @@
-use super::PersonStats;
+use crate::person::PersonStats;
 
 #[cfg_attr(not(target_arch = "spirv"), derive(Debug))]
 #[derive(Default, Clone, Copy)]

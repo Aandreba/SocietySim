@@ -1,4 +1,4 @@
-use core::ops::{Mul, BitXor, BitXorAssign, Add, AddAssign};
+use core::ops::*;
 #[cfg(target_arch = "spirv")]
 use core::arch::asm;
 
@@ -20,6 +20,50 @@ impl f32x2 {
         return Self { inner: core::simd::f32x2::from_array(inner) };
         #[cfg(target_arch = "spirv")]
         return Self { inner: spirv_std::glam::Vec2::from_array(inner) };
+    }
+    
+    cfg_if::cfg_if! {
+        if #[cfg(target_arch = "spirv")] {
+            #[inline]
+            pub fn x (self) -> f32 {
+                return self.inner.x
+            }
+
+            #[inline]
+            pub fn y (self) -> f32 {
+                return self.inner.y
+            }
+
+            #[inline]
+            pub fn x_mut (&mut self) -> &mut f32 {
+                return &mut self.inner.x
+            }
+
+            #[inline]
+            pub fn y_mut (&mut self) -> &mut f32 {
+                return &mut self.inner.y
+            }
+        } else {
+            #[inline]
+            pub fn x (self) -> f32 {
+                return self.inner[0]
+            }
+
+            #[inline]
+            pub fn y (self) -> f32 {
+                return self.inner[1]
+            }
+
+            #[inline]
+            pub fn x_mut (&mut self) -> &mut f32 {
+                return &mut self.inner[0]
+            }
+
+            #[inline]
+            pub fn y_mut (&mut self) -> &mut f32 {
+                return &mut self.inner[1]
+            }
+        }
     }
 
     #[inline]
@@ -63,6 +107,34 @@ impl Add for f32x2 {
     }
 }
 
+impl Sub for f32x2 {
+    type Output = f32x2;
+
+    #[cfg(target_arch = "spirv")]
+    #[inline]
+    fn sub(self, rhs: Self) -> Self::Output {
+        unsafe {
+            let mut inner = spirv_std::glam::Vec2::default();
+            asm! {
+                "%lhs = OpLoad _ {lhs}",
+                "%rhs = OpLoad _ {rhs}",
+                "%result = OpFSub _ %lhs %rhs",
+                "OpStore {result} %result",
+                lhs = in(reg) &self.inner,
+                rhs = in(reg) &rhs.inner,
+                result = in(reg) &mut inner
+            }
+            return Self { inner }
+        }
+    }
+
+    #[cfg(not(target_arch = "spirv"))]
+    #[inline]
+    fn sub(self, rhs: Self) -> Self::Output {
+        return Self { inner: self.inner + rhs.inner }
+    }
+}
+
 impl Mul for f32x2 {
     type Output = f32x2;
 
@@ -88,6 +160,45 @@ impl Mul for f32x2 {
     #[inline]
     fn mul(self, rhs: Self) -> Self::Output {
         return Self { inner: self.inner * rhs.inner }
+    }
+}
+
+impl Mul<f32> for f32x2 {
+    type Output = f32x2;
+
+    #[cfg(target_arch = "spirv")]
+    #[inline]
+    fn mul(self, rhs: f32) -> Self::Output {
+        unsafe {
+            let mut inner = spirv_std::glam::Vec2::default();
+            asm! {
+                "%float = OpTypeFloat 32",
+                "%vec = OpTypeVector %float 2",
+                "%lhs = OpLoad _ {lhs}",
+                "%rhs = OpLoad _ {rhs}",
+                "%result = OpVectorTimesScalar %vec %lhs %rhs",
+                "OpStore {result} %result",
+                lhs = in(reg) &self.inner,
+                rhs = in(reg) &rhs,
+                result = in(reg) &mut inner
+            }
+            return Self { inner }
+        }
+    }
+
+    #[cfg(not(target_arch = "spirv"))]
+    #[inline]
+    fn mul(self, rhs: f32) -> Self::Output {
+        return Self { inner: self.inner * core::simd::f32x2::splat(rhs) }
+    }
+}
+
+impl Mul<f32x2> for f32 {
+    type Output = f32x2;
+
+    #[inline]
+    fn mul(self, rhs: f32x2) -> Self::Output {
+        rhs * self
     }
 }
 
