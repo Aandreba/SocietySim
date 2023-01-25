@@ -230,11 +230,12 @@ checksum = "90e5c1c8368803113bf0c9584fc495a58b86dc8a29edbf8fe877d21d9507e797"
 
 [[package]]
 name = "elor"
-version = "1.1.3"
+version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf3ac27f0e1cf1348f3d957e32c2f62f9249d42b616039edb0df3f3ee106a6b4"
+checksum = "ee2ff10d33fa5e61bcc65b71e5a35d23fbebb63f97bf2f51e4c206bc8638b18d"
 dependencies = [
  "cfg-if",
+ "pin-project",
 ]
 
 [[package]]
@@ -953,6 +954,7 @@ dependencies = [
  "async-lock",
  "cfg-if",
  "docfg",
+ "elor",
  "futures",
  "humansize",
  "rand",

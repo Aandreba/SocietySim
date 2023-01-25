@@ -15,7 +15,7 @@ impl<C: ContextRef> Command<C> {
         let info = vk::CommandBufferBeginInfo {
             sType: vk::STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             pNext: core::ptr::null(),
-            flags: vk::COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, // todo
+            flags: 0,
             pInheritanceInfo: core::ptr::null(), // todo
         };
 

@@ -1,19 +1,19 @@
 use rand::random;
-use shared::person::Person;
-use std::{mem::MaybeUninit, pin::Pin, ops::RangeBounds};
+use shared::{person::Person, consts::GeneratePeopleConsts};
+use std::{mem::MaybeUninit, ops::RangeBounds, pin::Pin};
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags},
     buffer::{Buffer, BufferFlags, UsageFlags},
     context::{
         event::{consumer::EventConsumer, Event},
-        Context, ContextRef,
+        ContextRef,
     },
     cstr,
     descriptor::{DescriptorSet, DescriptorType},
-    include_spv,
+    forward_phantom, include_spv,
     pipeline::{ComputeBuilder, Pipeline},
-    utils::u64_to_u32,
-    Result, forward_phantom,
+    utils::{u64_to_u32},
+    Result,
 };
 
 pub struct GeneratePeople<C: ContextRef> {
@@ -48,18 +48,21 @@ impl<C: Clone + Unpin + ContextRef> GeneratePeople<C> {
         let people = Buffer::new_uninit(len, usage, flags, memory_flags, alloc)?;
 
         let set: &DescriptorSet = self.pipeline.sets().first().unwrap();
-        let people_desc = set.write_descriptor(&people, .., 0);
+        let people_desc = set.write_descriptor(&people);
         self.pipeline.sets_mut().update(&[people_desc]);
 
-        let seed = core::mem::replace(&mut self.seed, random());
-        let event = self.pipeline.compute_owned(..)?.push_contant(&seed).dispatch(
-            u64_to_u32(people.len()),
-            1,
-            1,
-        )?;
+        let consts = GeneratePeopleConsts {
+            seed: core::mem::replace(&mut self.seed, random()),
+            offset: 0
+        };
+
+        let event = self
+            .pipeline
+            .compute_owned(..)?
+            .push_contants(&consts)
+            .dispatch(u64_to_u32(people.len()), 1, 1)?;
 
         let (event, _) = event.replace(GeneratePeopleConsumer { result: people });
-
         return Ok(event);
     }
 
@@ -67,18 +70,34 @@ impl<C: Clone + Unpin + ContextRef> GeneratePeople<C> {
     pub fn initialize<'a, A: DeviceAllocator>(
         &mut self,
         people: &'a mut Buffer<MaybeUninit<Person>, A>,
-        bounds: impl RangeBounds<u64>
+        bounds: impl RangeBounds<u32>,
     ) -> Result<Event<Pin<C>, InitializePeopleConsumer<'a, A>>> {
+        let offset = match bounds.start_bound() {
+            std::ops::Bound::Included(x) => *x,
+            std::ops::Bound::Excluded(x) => *x + 1,
+            std::ops::Bound::Unbounded => 0,
+        };
+
+        let len = match bounds.end_bound() {
+            std::ops::Bound::Included(x) => *x + 1,
+            std::ops::Bound::Excluded(x) => *x,
+            std::ops::Bound::Unbounded => u64_to_u32(people.len()),
+        } - offset;
+
         let set: &DescriptorSet = self.pipeline.sets().first().unwrap();
-        let people_desc = set.write_descriptor(&people, bounds, 0);
+        let people_desc = set.write_descriptor(&people);
         self.pipeline.sets_mut().update(&[people_desc]);
 
-        let seed = core::mem::replace(&mut self.seed, random());
-        let event = self.pipeline.compute_owned(..)?.push_contant(&seed).dispatch(
-            u64_to_u32(people.len()),
-            1,
-            1,
-        )?;
+        let consts = GeneratePeopleConsts {
+            seed: core::mem::replace(&mut self.seed, random()),
+            offset
+        };
+
+        let event = self
+            .pipeline
+            .compute_owned(..)?
+            .push_contants(&consts)
+            .dispatch(len, 1, 1)?;
 
         let (event, _) = event.replace(InitializePeopleConsumer::new());
         return Ok(event);

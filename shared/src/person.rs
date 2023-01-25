@@ -5,6 +5,8 @@ use crate::{
     ExternBool,
 };
 
+pub mod stats;
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(
     not(target_arch = "spirv"),

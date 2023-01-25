@@ -3,9 +3,9 @@
 
 pub mod time;
 pub mod person;
-pub mod person_event;
 pub mod simd;
 pub mod chance;
+pub mod consts;
 //pub mod sync;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -22,7 +22,7 @@ impl ExternBool {
 
     #[inline]
     pub const fn get (self) -> bool {
-        return unsafe { core::mem::transmute(self.inner) }
+        return self.inner == 1
     }
 
     #[inline(always)]

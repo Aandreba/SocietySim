@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ops::{Deref, DerefMut, RangeBounds}};
+use std::{num::NonZeroU64, ptr::{addr_of, addr_of_mut}, ops::{Deref, DerefMut}};
 use crate::{utils::usize_to_u32, Result, device::{Device}, Entry, shader::Shader, buffer::Buffer, alloc::DeviceAllocator, context::{ContextRef, Context}};
 
 pub struct Builder<C> {
@@ -226,13 +226,13 @@ impl DescriptorSet {
     }
 
     #[inline]
-    pub fn write_descriptor<T, A: DeviceAllocator> (&self, buf: &Buffer<T, A>, bounds: impl RangeBounds<vk::DeviceSize>, offset: u32) -> WriteDescriptorSet {
+    pub fn write_descriptor<T, A: DeviceAllocator> (&self, buf: &Buffer<T, A>) -> WriteDescriptorSet {
         let inner = vk::WriteDescriptorSet {
             sType: vk::STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             pNext: core::ptr::null(),
             dstSet: self.id(),
             dstBinding: 0, // will be set later
-            dstArrayElement: offset,
+            dstArrayElement: 0,
             descriptorCount: 1,
             descriptorType: DescriptorType::StorageBuffer as i32,
             pImageInfo: core::ptr::null(),
@@ -242,7 +242,7 @@ impl DescriptorSet {
 
         return WriteDescriptorSet {
             inner,
-            buffer: Some(buf.descriptor(bounds))
+            buffer: Some(buf.descriptor())
         }
     }
 }

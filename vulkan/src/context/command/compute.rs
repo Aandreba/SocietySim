@@ -62,7 +62,7 @@ impl<'a, 'b, C: ContextRef, P: ContextRef> ComputeCommand<'b, C, P> {
     }
 
     #[inline]
-    pub fn push_contant<T: Copy>(
+    pub fn push_contants<T: Copy>(
         self,
         value: &T,
     ) -> Self {

@@ -1,7 +1,5 @@
 use std::{time::Duration, mem::ManuallyDrop};
 use elor::Either;
-use serde::__private::de;
-
 use crate::{sync::{Fence}, Result, error::Error, device::Device, Entry, utils::usize_to_u32};
 use self::consumer::{EventConsumer, Map};
 use super::{ContextRef, Context};

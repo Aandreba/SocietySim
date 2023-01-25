@@ -1,7 +1,9 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(ptr_metadata, iterator_try_collect, rustc_attrs)]
+#![feature(trait_alias, ptr_metadata, iterator_try_collect, rustc_attrs)]
 
-use population::Population;
+use population::{Population, PopulationAllocator};
+use std::io::Write;
+use std::str::FromStr;
 use vulkan::{
     alloc::{Book},
     context::Context,
@@ -31,22 +33,43 @@ fn main() -> anyhow::Result<()> {
     let phy = PhysicalDevice::first()?;
     let ctx = Context::new(phy)?;
     let alloc = Book::new(&ctx, None, None);
+    let mut population = Population::new(20_000, &alloc)?;
 
-    let population = Population::new(10, &alloc)?;
+    loop {
+        match first_menu(&population)? {
+            MenuOptions::Stats => {
+                println!("Population stats: {:#?}", population.stats()?);
+            }
+            MenuOptions::Exit => return Ok(()),
+        }
+    }
+}
 
-    // let mut evt = PersonalEvents::new(&ctx)?;
-    // let result = evt.call(&people, &events)?.wait()?;
-    // let result = result.map(..)?;
-    // println!("{:#?}", &result as &[ExternBool]);
+#[repr(u8)]
+pub enum MenuOptions {
+    Stats = 1,
+    Exit = 2,
+}
 
-    // let mut main = setup_main(&dev)?;
-    // call_gpu_main(&mut people, &mut main, &mut pool, &mut queues[0])?;
-    // let my_people = people.map(..)?;
-    // for person in my_people.iter() {
-    //     println!("{person:#?}")
-    // }
+fn first_menu<A: PopulationAllocator>(pops: &Population<A>) -> anyhow::Result<MenuOptions> {
+    let mut stdout = std::io::stdout().lock();
+    stdout.write_fmt(format_args!("Current population: {}\n", pops.len()))?;
+    stdout.write_all(b"1) Stats\n")?;
+    stdout.write_all(b"2) Exit\n")?;
+    stdout.flush()?;
 
-    Ok(())
+    loop {
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line)?;
+
+        match u8::from_str(line.trim_end()) {
+            Ok(x @ 1..=2) => return unsafe { Ok(core::mem::transmute(x)) },
+            _ => {
+                stdout.write_all(b"Invalid value\n")?;
+                stdout.flush()?;
+            },
+        }
+    }
 }
 
 #[test]
@@ -81,7 +104,7 @@ fn disassemble() -> anyhow::Result<()> {
     }
 
     spirv_cross("generate_people")?;
-    spirv_cross("compute_personal_event")?;
+    spirv_cross("population_stats")?;
 
     return Ok(());
 }

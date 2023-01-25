@@ -1,23 +1,50 @@
-use crate::game::generate_people::GeneratePeople;
+use crate::game::{generate_people::GeneratePeople, population_stats::CalcPopulationStats};
+use elor::Either;
 use humansize::BINARY;
-use shared::person::Person;
+use shared::person::{Person, PersonStats};
 use std::mem::MaybeUninit;
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags},
     buffer::{Buffer, BufferFlags, UsageFlags},
-    context::event::Event,
-    utils::u64_to_usize,
-    Result, physical_dev::MemoryHeapFlags,
+    context::{event::Event, ContextRef},
+    physical_dev::MemoryHeapFlags,
+    utils::{u64_to_u32, u64_to_usize},
+    Result,
 };
 
-pub struct Population<A: DeviceAllocator> {
+macro_rules! iter {
+    ($self:expr) => {{
+        let div = $self.people / $self.chunk_size;
+        let rem = $self.people % $self.chunk_size;
+
+        let full = $self.chunks[..u64_to_usize(div)].iter().map(|x| ($self.chunk_size, x));
+        let part = match rem {
+            0 => Either::Right(core::iter::empty()).into_same_iter(),
+            rem => Either::Left(core::iter::once((rem, &$self.chunks[u64_to_usize(div)])))
+                .into_same_iter(),
+        };
+
+        println!("{:#?}", rem);
+        full.chain(part)
+    }};
+}
+
+pub trait PopulationAllocator =
+    Clone + DeviceAllocator where <Self as DeviceAllocator>::Context: Clone + Unpin;
+
+struct PopulationShaders<C: ContextRef> {
+    stats: CalcPopulationStats<C>,
+}
+
+pub struct Population<A: PopulationAllocator> {
     chunks: Vec<Buffer<MaybeUninit<Person>, A>>,
+    shaders: PopulationShaders<A::Context>,
     chunk_size: u64,
     people: u64,
     alloc: A,
 }
 
-impl<A: Clone + DeviceAllocator> Population<A> {
+impl<A: PopulationAllocator> Population<A> {
     #[inline]
     pub fn new(people: u64, alloc: A) -> Result<Self> {
         let props = alloc.device().physical().properties();
@@ -27,11 +54,32 @@ impl<A: Clone + DeviceAllocator> Population<A> {
 
         let div = people / chunk_size;
         let rem = people % chunk_size;
-        
+
         #[cfg(debug_assertions)]
-        println!("Device total free memory: {}", humansize::format_size(alloc.device().physical().available_memory(MemoryHeapFlags::DEVICE_LOCAL), BINARY));
+        println!(
+            "Device total free memory: {}",
+            humansize::format_size(
+                alloc
+                    .device()
+                    .physical()
+                    .available_memory(MemoryHeapFlags::DEVICE_LOCAL),
+                BINARY
+            )
+        );
         #[cfg(debug_assertions)]
-        println!("Max allocation size: {}", humansize::format_size(alloc.device().physical().max_available_memory(MemoryHeapFlags::DEVICE_LOCAL).unwrap_or_default(), BINARY));
+        println!(
+            "Max allocation size: {}",
+            humansize::format_size(
+                alloc
+                    .device()
+                    .physical()
+                    .max_available_memory(MemoryHeapFlags::DEVICE_LOCAL)
+                    .unwrap_or_default(),
+                BINARY
+            )
+        );
+        #[cfg(debug_assertions)]
+        println!();
 
         let mut init = GeneratePeople::new(alloc.context())?;
         let mut events = Vec::with_capacity(u64_to_usize(div));
@@ -57,19 +105,25 @@ impl<A: Clone + DeviceAllocator> Population<A> {
                 UsageFlags::STORAGE_BUFFER,
                 BufferFlags::empty(),
                 MemoryFlags::DEVICE_LOCAL,
-                alloc.clone()
+                alloc.clone(),
             )?;
 
-            init.initialize(&mut rem_people, ..rem)?.wait()?;
+            init.initialize(&mut rem_people, ..u64_to_u32(rem))?
+                .wait()?;
             chunks.push(rem_people);
         }
+
+        let shaders = PopulationShaders {
+            stats: CalcPopulationStats::new(alloc.owned_context())?,
+        };
 
         drop(init);
         return Ok(Self {
             chunks,
             chunk_size,
-            people: div * chunk_size,
-            alloc
+            shaders,
+            people,
+            alloc,
         });
     }
 
@@ -100,6 +154,25 @@ impl<A: Clone + DeviceAllocator> Population<A> {
     }
 
     #[inline]
+    pub fn stats(&mut self) -> Result<PopulationStats> {
+        let result = Buffer::from_sized_iter(
+            [shared::person::stats::PopulationStats::default()],
+            UsageFlags::STORAGE_BUFFER,
+            BufferFlags::empty(),
+            MemoryFlags::MAPABLE,
+            &self.alloc,
+        )?;
+
+        let events = iter!(self)
+            .map(|(len, people)| self.shaders.stats.call(&result, people, len))
+            .try_collect::<Vec<_>>()?;
+
+        let _ = Event::join_all(events)?;
+        let map = result.map(..)?;
+        return Ok(PopulationStats::from_stats(self, map[0]));
+    }
+
+    #[inline]
     pub fn len(&self) -> u64 {
         return self.people;
     }
@@ -107,5 +180,37 @@ impl<A: Clone + DeviceAllocator> Population<A> {
     #[inline]
     pub fn capacity(&self) -> u64 {
         return (self.chunks.len() as u64) * self.chunk_size;
+    }
+
+    #[inline]
+    pub fn allocator(&self) -> &A {
+        return &self.alloc;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PopulationStats {
+    males: f32,
+    stats: PersonStats<f32>,
+}
+
+impl PopulationStats {
+    #[inline]
+    pub fn from_stats<A: PopulationAllocator>(
+        pops: &Population<A>,
+        stats: shared::person::stats::PopulationStats,
+    ) -> Self {
+        let len = pops.len() as f32;
+        return Self {
+            males: 100.0 * (stats.males as f32) / len,
+            stats: PersonStats {
+                cordiality: (stats.stats.cordiality as f32) / len,
+                intelligence: (stats.stats.intelligence as f32) / len,
+                knowledge: (stats.stats.knowledge as f32) / len,
+                finesse: (stats.stats.finesse as f32) / len,
+                gullability: (stats.stats.gullability as f32) / len,
+                health: (stats.stats.health as f32) / len,
+            },
+        };
     }
 }

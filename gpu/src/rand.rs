@@ -1,5 +1,7 @@
-use shared::simd::{f32x2, u32x4};
-use crate::math::*;
+use core::ops::AddAssign;
+
+use shared::simd::{u32x4};
+use crate::math::CheckedArith;
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
@@ -14,26 +16,40 @@ impl Random {
     }
 
     #[inline]
-    pub fn from_entropy (seed: [u32; 4], point: f32x2) -> Self {
+    pub fn from_entropy (seed: [u32; 4], point: u32) -> Self {
         let mut this = Self::from_seed(seed);
         this.apply_entropy(point);
         return this
     }
 
     #[inline]
-    pub fn apply_entropy (&mut self, point: f32x2) {
-        const ALPHA: f32x2 = f32x2::from_array([12.9898, 78.233]);
-        const BETA: f32 = 43758.5453123;
-        const MAX: f32 = u32::MAX as f32;
-
-        let entropy = FloatMath::fract(FloatMath::sin(ALPHA.dot(point)) * BETA);
-        let entropy = (entropy * MAX) as u32;
-        self.inner += u32x4::from_array([entropy; 4]);
+    pub fn apply_entropy (&mut self, point: u32) {
+        match CheckedArith::overflowing_add(self.inner.x(), point) {
+            (x, false) => *self.inner.x_mut() = x,
+            (point, true) => {
+                *self.inner.x_mut() = 0;
+                match CheckedArith::overflowing_add(self.inner.y(), point) {
+                    (x, false) => *self.inner.y_mut() = x,
+                    (point, true) => {
+                        *self.inner.y_mut() = 0;
+                        match CheckedArith::overflowing_add(self.inner.z(), point) {
+                            (x, false) => *self.inner.z_mut() = x,
+                            (point, true) => {
+                                *self.inner.z_mut() = 0;
+                                self.inner.w_mut().add_assign(point);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        self.jump();
     }
 
     /// This is the jump function for the generator. It is equivalent to 2^64 calls to next().
     /// It can be used to generate 2^64 non-overlapping subsequences for parallel computations.
-    pub fn jump (&mut self) -> u32 {
+    pub fn jump (&mut self) {
         const JUMP: [u32; 4] = [0x8764000b, 0xf542d2d3, 0x6fa035c3, 0x77f2db5b];
 
         let mut result = u32x4::default();
@@ -46,14 +62,14 @@ impl Random {
             }
         }
 
-        todo!()
+        self.inner = result;
     }
 }
 
 impl Random {
     #[inline]
     pub fn next_bool (&mut self) -> bool {
-        return self.next_u32() & 1 == 1
+        return (self.next_u32() as i32) < 0
     }
     
     #[inline]
