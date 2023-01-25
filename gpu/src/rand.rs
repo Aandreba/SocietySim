@@ -133,7 +133,7 @@ impl Random {
     pub fn next_gaussian (&mut self, std: f32, mean: f32) -> f32 {
         if self.has_next {
             self.has_next = false;
-            return self.gaussian
+            return std * self.gaussian + mean
         }
 
         let mut v: f32x2;
