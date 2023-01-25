@@ -24,7 +24,6 @@ macro_rules! iter {
                 .into_same_iter(),
         };
 
-        println!("{:#?}", rem);
         full.chain(part)
     }};
 }

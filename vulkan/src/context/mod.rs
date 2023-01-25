@@ -4,14 +4,16 @@ use crate::{
     device::Device,
     error::Error,
     physical_dev::{PhysicalDevice, QueueFlags},
+    pipeline::Pipeline,
     utils::usize_to_u32,
-    Entry, Result, pipeline::Pipeline,
+    Entry, Result,
 };
 use std::{
     num::NonZeroU64,
     ops::{Deref, Index, RangeBounds},
+    pin::Pin,
     ptr::{addr_of, addr_of_mut},
-    sync::{Mutex, TryLockError}, pin::Pin,
+    sync::{Mutex, TryLockError},
 };
 
 pub trait ContextRef = Deref<Target = Context>;
@@ -29,7 +31,7 @@ pub(crate) struct QueueFamily {
 #[derive(Debug)]
 pub struct Context {
     device: Device,
-    families: Box<[QueueFamily]>
+    families: Box<[QueueFamily]>,
 }
 
 impl Context {
@@ -91,7 +93,10 @@ impl Context {
     }
 
     #[inline]
-    fn command_by_deref<T: Deref<Target = Self>> (this: Pin<T>, flags: QueueFlags) -> Result<Command<T>> {
+    fn command_by_deref<T: Deref<Target = Self>>(
+        this: Pin<T>,
+        flags: QueueFlags,
+    ) -> Result<Command<T>> {
         let (pool, family) = 'outer: loop {
             for family in this.families.iter() {
                 if family.flags.contains(flags) {
@@ -152,7 +157,12 @@ impl Context {
 
 impl Context {
     #[inline]
-    pub fn compute_command_by_deref<'b, T: Deref<Target = Self>, C: ContextRef, R: RangeBounds<usize>>(
+    pub fn compute_command_by_deref<
+        'b,
+        T: Deref<Target = Self>,
+        C: ContextRef,
+        R: RangeBounds<usize>,
+    >(
         this: Pin<T>,
         pipeline: &'b Pipeline<C>,
         desc_sets: R,
@@ -161,11 +171,34 @@ impl Context {
         [DescriptorSet]: Index<R, Output = [DescriptorSet]>,
     {
         let cmd = Self::command_by_deref(this, QueueFlags::COMPUTE)?;
-        return ComputeCommand::new(cmd, pipeline, desc_sets)
+        return ComputeCommand::new(cmd, pipeline, desc_sets);
     }
 
     #[inline]
-    pub fn transfer_command_by_deref<'b, T: Deref<Target = Self>> (this: Pin<T>) -> Result<TransferCommand<'b, T>> {
+    pub fn transfer_command_by_deref<'b, T: Deref<Target = Self>>(
+        this: Pin<T>,
+    ) -> Result<TransferCommand<'b, T>> {
         return Self::command_by_deref(this, QueueFlags::TRANSFER).map(TransferCommand::new);
+    }
+}
+
+impl Drop for Context {
+    fn drop(&mut self) {
+        #[inline]
+        fn drop_family(device: &Device, family: &mut QueueFamily) {
+            let [pool, buffer] = match family.pool_buffer.get_mut() {
+                Ok(x) => x,
+                Err(e) => e.into_inner(),
+            };
+
+            (Entry::get().free_command_buffers)(device.id(), pool.get(), 1, &buffer.get());
+            (Entry::get().destroy_command_pool)(device.id(), pool.get(), core::ptr::null());
+        }
+
+        self.families
+            .iter_mut()
+            .for_each(|x| drop_family(&self.device, x));
+
+        (Entry::get().destroy_device)(self.device.id(), core::ptr::null());
     }
 }

@@ -34,7 +34,7 @@ fn main() -> anyhow::Result<()> {
     let phy = PhysicalDevice::first()?;
     let ctx = Context::new(phy)?;
     let alloc = Book::new(&ctx, None, None);
-    let mut population = Population::new(20_000, GenerationOps::default(), &alloc)?;
+    let mut population = Population::new(200_000, GenerationOps::default(), &alloc)?;
 
     loop {
         match first_menu(&population)? {
