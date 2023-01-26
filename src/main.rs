@@ -39,7 +39,7 @@ fn main() -> anyhow::Result<()> {
     loop {
         match first_menu(&population)? {
             MenuOptions::Stats => {
-                println!("Population stats: {:#?}", population.mean_stats()?);
+                println!("Population stats: {:#?}", population.count_stats()?);
             }
             MenuOptions::Exit => return Ok(()),
         }
@@ -91,13 +91,12 @@ fn disassemble() -> anyhow::Result<()> {
 
     fn spirv_cross(name: impl AsRef<std::path::Path>) -> anyhow::Result<()> {
         let path = get_path(name.as_ref())?;
-        let cmd = std::process::Command::new("spirv-cross")
-            .arg("--msl")
+        let cmd = std::process::Command::new("spirv-dis")
             .arg(path)
             .output()?;
 
         if cmd.status.success() {
-            std::fs::write(name.as_ref().with_extension("cpp"), cmd.stdout)?;
+            std::fs::write(name.as_ref().with_extension("spirv"), cmd.stdout)?;
         } else {
             std::io::copy(&mut cmd.stderr.as_slice(), &mut std::io::stderr())?;
         }
@@ -105,7 +104,8 @@ fn disassemble() -> anyhow::Result<()> {
     }
 
     spirv_cross("generate_people")?;
-    spirv_cross("population_stats")?;
+    spirv_cross("population_mean_stats")?;
+    spirv_cross("population_count_stats")?;
 
     return Ok(());
 }

@@ -1,8 +1,17 @@
-use crate::game::{generate_people::GeneratePeople, population_stats::{CalcPopulationMeanStats, CalcPopulationCountStats}};
+use crate::game::{
+    generate_people::GeneratePeople,
+    population_stats::{CalcPopulationCountStats, CalcPopulationMeanStats},
+};
 use elor::Either;
 use humansize::BINARY;
-use shared::{person::{Person, PersonStats}, population::{GenerationOps, PopulationCountStats}};
-use std::{mem::MaybeUninit, ops::{Deref, DerefMut}};
+use shared::{
+    person::{Person, PersonStats},
+    population::{GenerationOps, PopulationCountStats},
+};
+use std::{
+    mem::MaybeUninit,
+    ops::{Deref, DerefMut},
+};
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags},
     buffer::{Buffer, BufferFlags, UsageFlags},
@@ -17,7 +26,9 @@ macro_rules! iter {
         let div = $self.people / $self.chunk_size;
         let rem = $self.people % $self.chunk_size;
 
-        let full = $self.chunks[..u64_to_usize(div)].iter().map(|x| ($self.chunk_size, x));
+        let full = $self.chunks[..u64_to_usize(div)]
+            .iter()
+            .map(|x| ($self.chunk_size, x));
         let part = match rem {
             0 => Either::Right(core::iter::empty()).into_same_iter(),
             rem => Either::Left(core::iter::once((rem, &$self.chunks[u64_to_usize(div)])))
@@ -109,7 +120,8 @@ impl<A: PopulationAllocator> Population<A> {
                 alloc.clone(),
             )?;
 
-            init.initialize(ops, &mut rem_people, ..u64_to_u32(rem))?.wait()?;
+            init.initialize(ops, &mut rem_people, ..u64_to_u32(rem))?
+                .wait()?;
             chunks.push(rem_people);
         }
 
@@ -174,7 +186,7 @@ impl<A: PopulationAllocator> Population<A> {
     }
 
     #[inline]
-    pub fn count_stats (&mut self) -> Result<Box<PopulationCountStats>> {
+    pub fn count_stats(&mut self) -> Result<Box<PopulationCountStats>> {
         let mut result = Buffer::new_uninit(
             1,
             UsageFlags::STORAGE_BUFFER,
@@ -183,9 +195,19 @@ impl<A: PopulationAllocator> Population<A> {
             &self.alloc,
         )?;
 
+        #[cfg(debug_assertions)]
+        println!(
+            "{} size: {}",
+            core::any::type_name::<PopulationCountStats>(),
+            humansize::format_size(core::mem::size_of::<PopulationCountStats>(), BINARY)
+        );
+
         let mut map = result.map_mut(..)?;
         unsafe {
-            map.align_to_mut::<u8>().1.fill(0);
+            let (lhs, map, rhs) = map.align_to_mut::<u8>();
+            debug_assert_eq!(lhs.len(), 0);
+            debug_assert_eq!(rhs.len(), 0);
+            map.fill(0);
         }
         drop(map);
 
@@ -197,7 +219,9 @@ impl<A: PopulationAllocator> Population<A> {
         let _ = Event::join_all(events)?;
         let mut alloc = Box::new_uninit();
         let map = result.map(..)?;
-        unsafe { core::ptr::copy_nonoverlapping(map.as_ptr(), alloc.as_mut_ptr(), core::mem::size_of::<PopulationCountStats>()) };
+        unsafe {
+            core::ptr::copy_nonoverlapping(map.as_ptr(), alloc.as_mut_ptr(), 1);
+        };
         drop(map);
 
         return unsafe { Ok(alloc.assume_init()) };

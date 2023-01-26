@@ -103,15 +103,14 @@ pub fn population_count_stats(
     #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] stats: &mut PopulationCountStats,
 ) {
     let person = &people[id.x as usize];
-    
+
     if person.is_male.get() {
         unsafe { atomic_i_add::<_, 2, 0>(&mut stats.males, 1) };
     }
 
     let age_idx = usize::min(person.age.as_years() as usize, MAX_AGE);
-    unsafe { atomic_i_add::<_, 2, 0>(&mut stats.ages[age_idx], 1) };
-
     unsafe {
+        atomic_i_add::<_, 2, 0>(&mut stats.ages[age_idx], 1);
         atomic_i_add::<_, 2, 0>(&mut stats.stats.cordiality[person.stats.cordiality as usize], 1);
         atomic_i_add::<_, 2, 0>(&mut stats.stats.finesse[person.stats.finesse as usize], 1);
         atomic_i_add::<_, 2, 0>(&mut stats.stats.gullability[person.stats.gullability as usize], 1);
