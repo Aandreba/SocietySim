@@ -1,0 +1,16 @@
+{
+    "recruitment_center": (
+        jobs: [""],
+        skills: ["trooper"]
+    ),
+    
+    "stem_university": (
+        jobs: [""]
+        skills: ["engineer"]
+    ),
+
+    "arts_academy": (
+        jobs: ["ac"]
+        skills: ["artist"]
+    )
+}

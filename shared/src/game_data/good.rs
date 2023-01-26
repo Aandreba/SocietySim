@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
-use super::Str;
+use super::{NamedEntry};
 
-pub type NamedGood<'a> = (&'a Str, &'a Good);
+pub type NamedGood<'a> = NamedEntry<'a, Good>;
 
 #[derive(Debug)]
 #[repr(C)]

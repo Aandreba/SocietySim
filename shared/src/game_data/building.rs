@@ -1,7 +1,12 @@
-use super::{good::{NamedGood, Good}, job::{NamedJob, Job}, skill::{NamedSkill, Skill}, Str, NamedEntry};
+use super::{
+    good::{Good, NamedGood},
+    job::{Job, NamedJob},
+    skill::{NamedSkill, Skill},
+    NamedEntry, Str,
+};
 use core::num::NonZeroU32;
 use serde::{Deserialize, Serialize};
-use vector_mapp::{r#box::BoxMap, vec::VecMap};
+use vector_mapp::{r#box::BoxMap};
 
 pub type NamedBuilding<'a> = NamedEntry<'a, Building<'a>>;
 
@@ -14,19 +19,35 @@ pub struct Building<'a> {
 }
 
 impl<'a> Building<'a> {
-    pub fn from_raw(raw: RawBuilding, goods: &'a BoxMap<Str, Good>, jobs: &'a BoxMap<Str, Job<'a>>, skills: &'a BoxMap<Str, Skill>) -> Self {
+    pub fn from_raw(
+        raw: RawBuilding,
+        goods: &'a BoxMap<Str, Good>,
+        jobs: &'a BoxMap<Str, Job<'a>>,
+        skills: &'a BoxMap<Str, Skill>,
+    ) -> Self {
         return Self {
-            consumtion: raw.consumption.into_iter().map(|(key, value)| goods.get_key_value(&key)),
-            production: todo!(),
-            jobs: raw.jobs.into_iter()
+            consumtion: raw
+                .consumption
+                .into_iter()
+                .filter_map(|(key, value)| Some((goods.get_key_value(&key)?.into(), value)))
+                .collect::<BoxMap<_, _>>(),
+
+            production: raw
+                .production
+                .into_iter()
+                .filter_map(|(key, value)| Some((goods.get_key_value(&key)?.into(), value)))
+                .collect::<BoxMap<_, _>>(),
+
+            jobs: raw
+                .jobs
+                .into_iter()
                 .filter_map(|(job, data)| {
                     let job = jobs.get_key_value(&job)?.into();
                     let data = BuildingJob::from_raw(data, skills);
-                    return Some((job, data))
+                    return Some((job, data));
                 })
-                .collect::<VecMap<_, _>>()
-                .into(),
-        }
+                .collect::<BoxMap<_, _>>(),
+        };
     }
 }
 
@@ -51,7 +72,7 @@ impl<'a> BuildingJob<'a> {
                 learned_skills: learned_skills
                     .into_vec()
                     .into_iter()
-                    .filter_map(|x| skills.get_key_value(&x))
+                    .filter_map(|x| skills.get_key_value(&x).map(Into::into))
                     .collect::<Vec<_>>()
                     .into_boxed_slice(),
             },

@@ -42,9 +42,21 @@
         )
     ),
 
+    "mathematitian": (
+        time: (
+            
+        )
+    )
+
     "strategist": (
         time: (
             years: 10
         )
     ),
+
+    "artist": (
+        time: (
+            years: 3
+        )
+    )
 }

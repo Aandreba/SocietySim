@@ -6,6 +6,7 @@ pub mod job;
 pub mod skill;
 pub mod building;
 pub mod good;
+pub mod institution;
 
 #[derive(Debug, Clone, Copy)]
 pub struct NamedEntry<'a, T: ?Sized> {

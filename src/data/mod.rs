@@ -13,7 +13,7 @@ use vector_mapp::{r#box::BoxMap, vec::VecMap};
 
 #[derive(Debug)]
 pub struct GameContext {
-    buildings: BoxMap<Str, Building<'static>>, // depends on jobs & goods
+    buildings: BoxMap<Str, Building<'static>>, // depends on goods, jobs & skills
     jobs: BoxMap<Str, Job<'static>>, // depends on skills
     skills: BoxMap<Str, Skill>,
     goods: BoxMap<Str, Good>,
@@ -27,7 +27,17 @@ impl GameContext {
 
     #[inline]
     pub fn buildings<'a> (&'a self) -> &'a BoxMap<Str, Building<'a>> {
-        return unsafe { &*addr_of!(self.jobs).cast() }
+        return unsafe { &*addr_of!(self.buildings).cast() }
+    }
+
+    #[inline]
+    pub fn skills (&self) -> &BoxMap<Str, Skill> {
+        return &self.skills
+    }
+
+    #[inline]
+    pub fn goods (&self) -> &BoxMap<Str, Good> {
+        return &self.goods
     }
 }
 
@@ -59,17 +69,20 @@ impl GameContext {
             let jobs = jobs
                 .map_ok(|(key, value)| (key, core::mem::transmute(Job::from_raw(value, &skills))))
                 .try_collect::<VecMap<_, _>>()
-                .await?;
+                .await?
+                .into();
 
             let buildings = buildings
-            .map_ok(|(key, value)| (key, core::mem::transmute(Building::from_raw(value, &skills))))
-            .try_collect::<VecMap<_, _>>()
-            .await?;
+                .map_ok(|(key, value)| (key, core::mem::transmute(Building::from_raw(value, &goods, &jobs, &skills))))
+                .try_collect::<VecMap<_, _>>()
+                .await?
+                .into();
                 
             return Ok(Self {
                 skills,
                 goods,
-                jobs: jobs.into()
+                jobs,
+                buildings
             });
         }
 
@@ -109,7 +122,9 @@ mod test {
     #[tokio::test]
     async fn test () -> anyhow::Result<()> {
         let ctx = GameContext::load_raw("game").await?;
-        println!("{ctx:#?}");
+        let buildings = ctx.buildings();
+
+        println!("{buildings:#?}");
         return Ok(())
     }
 }

@@ -1,6 +1,12 @@
 {
     "water": (),
+    "food": (),
     "uranium": (),
     "coal": (),
     "electricity": (),
+    "military_equipment": (),
+    "textiles": (),
+    "micropchips": (),
+    "phones": (),
+    "computers": ()
 }

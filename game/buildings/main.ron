@@ -2,16 +2,16 @@
     "nuclear_reactor": (
         consumption: {
             "uranium": 10,
-            "water": 2
+            "water": 1
         },
 
         production: {
-            "electricity": 25
+            "electricity": 15
         },
 
         jobs: {
-            "machinist": 100,
-            "scientist": 50,
+            "machinist": 1000,
+            "scientist": 500,
         },
     ),
 
@@ -25,10 +25,53 @@
         },
 
         jobs: {
-            "servicemen": (
-                amount: 100,
+            "serviceman": (
+                amount: 1000,
                 learned_skills: ["strategist"]
-            )
+            ),
+            "officer": 500
         }
+    ),
+
+    "recruitment_center": (
+        consumption: {
+            "paper": 10,
+            "military_equipment": 5
+        },
+
+        jobs: {
+            "clerk": 250,
+            "bureocrat": 1000
+        },
+
+        learned_skills: ["trooper"]
+    ),
+    
+    "stem_university": (        
+        consumption: {
+            "paper": 10,
+            "computers": 3
+        },
+
+        jobs: {
+            "academic": 750,
+            "scientist": 750
+        }
+
+        learned_skills: ["engineer", "mathematitian"]
+    ),
+
+    "arts_academy": (
+        consumption: {
+            "paper": 15,
+            "textiles": 10,
+        },
+
+        jobs: {
+            "academic": 750,
+            "designer": 750
+        }
+        
+        learned_skills: ["artist"]
     )
 }
