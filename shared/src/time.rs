@@ -1,7 +1,7 @@
 use core::ops::{Add, AddAssign, Sub, SubAssign};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-#[cfg_attr(not(target_arch = "spirv"), derive(serde::Serialize))]
+#[cfg_attr(not(target_arch = "spirv"), derive(serde::Serialize, serde::Deserialize), serde(from = "GameDurationDeser"))]
 #[repr(transparent)]
 pub struct GameDuration {
     days: u16,
@@ -104,84 +104,29 @@ impl SubAssign for GameDuration {
 }
 
 #[cfg(not(target_arch = "spirv"))]
-impl<'de> serde::Deserialize<'de> for GameDuration {
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+enum GameDurationDeser {
+    Days (u16),
+    Parts {
+        #[serde(default)]
+        days: u16,
+        #[serde(default)]
+        weeks: u16,
+        #[serde(default)]
+        months: u16,
+        #[serde(default)]
+        years: u8
+    }
+}
+
+#[cfg(not(target_arch = "spirv"))]
+impl From<GameDurationDeser> for GameDuration {
     #[inline]
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct LocalVisitor;
-        impl<'de> serde::de::Visitor<'de> for LocalVisitor {
-            type Value = GameDuration;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                write!(formatter, "a number of days or a definition")
-            }
-
-            #[inline]
-            fn visit_u8<E>(self, v: u8) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                self.visit_u16(v as u16)
-            }
-
-            #[inline]
-            fn visit_u16<E>(self, v: u16) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                return Ok(GameDuration::from_days(v));
-            }
-
-            #[inline]
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-            where
-                A: serde::de::MapAccess<'de>,
-            {
-                let mut days = None;
-                let mut weeks = None;
-                let mut months = None;
-                let mut years = None;
-
-                loop {
-                    match map.next_key::<&'de str>()? {
-                        Some("days") if days.is_none() => {
-                            days = map.next_value::<u16>().map(Some)?
-                        }
-                        Some("weeks") if weeks.is_none() => {
-                            weeks = map.next_value::<u16>().map(Some)?
-                        }
-                        Some("months") if months.is_none() => {
-                            months = map.next_value::<u16>().map(Some)?
-                        }
-                        Some("years") if years.is_none() => {
-                            years = map.next_value::<u8>().map(Some)?
-                        }
-                        Some(key @ ("days" | "weeks" | "months" | "years")) => {
-                            return Err(serde::de::Error::custom(format_args!(
-                                "duplicate field `{key}`"
-                            )))
-                        }
-                        Some(other) => {
-                            return Err(serde::de::Error::unknown_field(
-                                other,
-                                &["days", "weeks", "months", "years"],
-                            ))
-                        }
-                        None => break,
-                    }
-                }
-
-                return Ok(GameDuration::new(
-                    days.unwrap_or_default(),
-                    weeks.unwrap_or_default(),
-                    months.unwrap_or_default(),
-                    years.unwrap_or_default(),
-                ));
-            }
+    fn from(value: GameDurationDeser) -> Self {
+        match value {
+            GameDurationDeser::Days(days) => GameDuration::from_days(days),
+            GameDurationDeser::Parts { days, weeks, months, years  } => GameDuration::new(days, weeks, months, years)
         }
-
-        return deserializer.deserialize_any(LocalVisitor);
     }
 }

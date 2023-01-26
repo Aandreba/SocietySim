@@ -13,9 +13,10 @@ macro_rules! flat_mod {
 pub mod time;
 pub mod person;
 pub mod simd;
-pub mod chance;
 pub mod consts;
 pub mod population;
+#[cfg(not(target_arch = "spirv"))]
+pub mod game_data;
 //pub mod sync;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]

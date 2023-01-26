@@ -1,5 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(trait_alias, new_uninit, ptr_metadata, iterator_try_collect, rustc_attrs)]
+#![feature(trait_alias, result_flattening, new_uninit, ptr_metadata, iterator_try_collect, rustc_attrs)]
 
 use population::{Population, PopulationAllocator};
 use shared::population::GenerationOps;
@@ -13,7 +13,7 @@ use vulkan::{
 };
 
 pub mod game;
-pub mod menu;
+pub mod data;
 pub mod population;
 
 #[macro_export]

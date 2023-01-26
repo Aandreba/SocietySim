@@ -1,0 +1,16 @@
+{
+    "government_form": {
+        "theocracy": (),
+        "monarchy": (),
+        "presidential_republic": (),
+        "parlamentary_republic": (),
+        "commune": ()
+    },
+
+    "distribution_of_power": {
+        "autocracy": (),
+        "oligarchy": (),
+        "popular_suffrage": (),
+        "anarchy": ()
+    }
+}

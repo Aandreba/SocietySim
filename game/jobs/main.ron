@@ -1,0 +1,44 @@
+{
+    "laborer": (
+        skills: ["handyman"]
+    ),
+    "farmer": (
+        skills: ["rancher", "planter"]
+    ),
+    "servicemen": (
+        skills: ["trooper"]
+    ),
+    "clerk": (
+        skills: ["officeworker"]
+    ),
+    "bureocrat": (
+        skills: ["officeworker"]
+    ),
+    "academic": (
+        skills: []
+    ),
+    "officer": (
+        skills: {
+            "officework": 1,
+            "strategist": 2
+        }
+    ),
+    "machinist": (
+        skills: ["engineer"]
+    ),
+    "scientist": (
+        skills: {
+            "programmer": 1,
+            "mathematitian": 9
+        }
+    ),
+    "developer": (
+        skills: {
+            "engineer": 2,
+            "mathematitian": 1,
+            "programmer": 9
+        }
+    ),
+    // "capitalist": (),
+    // "aristocrat": ()
+}

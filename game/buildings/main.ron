@@ -1,0 +1,34 @@
+{
+    "nuclear_reactor": (
+        consumption: {
+            "uranium": 10,
+            "water": 2
+        },
+
+        production: {
+            "electricity": 25
+        },
+
+        jobs: {
+            "machinist": 100,
+            "scientist": 50,
+        },
+    ),
+
+    "barrack": (
+        consumption: {
+            "military_equipment": 10
+        },
+
+        production: {
+            
+        },
+
+        jobs: {
+            "servicemen": (
+                amount: 100,
+                learned_skills: ["strategist"]
+            )
+        }
+    )
+}

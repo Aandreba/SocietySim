@@ -1,0 +1,50 @@
+// Intelligence reduces/increases the time to learn a new skill
+{
+    "handyman": (
+        time: (
+            months: 3
+        )
+    ),
+    
+    "rancher": (
+        time: (
+            months: 3
+        )
+    ),
+
+    "planter": (
+        time: (
+            months: 3
+        )
+    ),
+
+    "trooper": (
+        time: (
+            months: 6
+        )
+    ),
+
+    "officeworker": (
+        time: (
+            months: 3
+        )
+    ),
+
+    "engineer": (
+        time: (
+            years: 4
+        )
+    ),
+
+    "programmer": (
+        time: (
+            years: 2
+        )
+    ),
+
+    "strategist": (
+        time: (
+            years: 10
+        )
+    ),
+}

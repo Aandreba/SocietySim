@@ -686,9 +686,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.49"
+version = "1.0.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57a8eca9f9c4ffde41714334dee777596264c7825420f521abc92b5b5deb63a5"
+checksum = "6ef7d57beacfaf2d8aee5937dab7b7f28de3cb8b1828479bb5de2a7106f2bae2"
 dependencies = [
  "unicode-ident",
 ]
@@ -915,9 +915,23 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "cfg-if",
+ "elor",
  "glam",
  "serde",
+ "shared_proc",
  "spirv-std",
+ "vector_mapp 0.2.1",
+]
+
+[[package]]
+name = "shared_proc"
+version = "0.1.0"
+dependencies = [
+ "derive-syn-parse",
+ "proc-macro2",
+ "quote",
+ "syn",
+ "vector_mapp 0.1.0",
 ]
 
 [[package]]
@@ -964,6 +978,7 @@ dependencies = [
  "shared",
  "spirv-builder",
  "tokio",
+ "vector_mapp 0.2.1",
  "vulkan",
 ]
 
@@ -1155,6 +1170,27 @@ dependencies = [
  "futures",
  "num-traits",
  "once_cell",
+]
+
+[[package]]
+name = "vector_mapp"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "240b31f6d45f78a17e57ed897451c6f67ed6a9cf7cfb7dc3b9f33875cf2f60fa"
+dependencies = [
+ "cfg-if",
+ "docfg",
+]
+
+[[package]]
+name = "vector_mapp"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "127c305de635df04ab2b466cce634d4ef0a1a841bb4b120455aef54b04bd1e65"
+dependencies = [
+ "cfg-if",
+ "docfg",
+ "serde",
 ]
 
 [[package]]
