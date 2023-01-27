@@ -8,7 +8,7 @@ pub mod skill;
 pub mod building;
 pub mod good;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct NamedEntry<'a, T: ?Sized> {
     pub key: &'a Str,
     pub value: &'a T
@@ -42,7 +42,14 @@ impl<'a, T: ?Sized> Into<(&'a Str, &'a T)> for NamedEntry<'a, T> {
     }
 }
 
+impl<T: ?Sized> Clone for NamedEntry<'_, T> {
+    fn clone(&self) -> Self {
+        Self { key: self.key, value: self.value }
+    }
+}
+
 impl<T: ?Sized> Eq for NamedEntry<'_, T> {}
+impl<T: ?Sized> Copy for NamedEntry<'_, T> {}
 
 #[inline]
 pub(super) fn try_get_key_value<'a, T> (map: &'a BoxMap<Str, T>, name: &str) -> anyhow::Result<NamedEntry<'a, T>> {

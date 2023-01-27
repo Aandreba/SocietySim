@@ -1,8 +1,7 @@
 use super::{
     skill::{NamedSkill, Skill},
-    Str, NamedEntry, try_get_key_value,
+    try_get_key_value, NamedEntry, Str,
 };
-use elor::Either;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use vector_mapp::r#box::BoxMap;
@@ -11,42 +10,32 @@ pub type NamedJob<'a> = NamedEntry<'a, Job<'a>>;
 
 #[derive(Debug)]
 pub struct Job<'a> {
-    pub skills: Box<[JobSkill<'a>]>,
+    pub skills: BoxMap<NamedSkill<'a>, f32>,
 }
 
 impl<'a> Job<'a> {
     #[inline]
     pub fn from_raw(raw: RawJob, skills: &'a BoxMap<Str, Skill>) -> anyhow::Result<Self> {
         return Ok(Self {
-            skills: JobSkill::from_raw(raw.skills, skills).try_collect()?,
-        })
+            skills: Self::raw_skills(raw.skills, skills)?,
+        });
     }
-}
 
-#[derive(Debug)]
-pub struct JobSkill<'a> {
-    pub skill: NamedSkill<'a>,
-    pub weight: f32,
-}
-
-impl<'a> JobSkill<'a> {
-    pub fn from_raw(
+    fn raw_skills(
         raw: RawJobSkills,
         skills: &'a BoxMap<Str, Skill>,
-    ) -> impl Iterator<Item = anyhow::Result<JobSkill<'a>>> {
+    ) -> anyhow::Result<BoxMap<NamedSkill<'a>, f32>> {
         return match raw {
-            RawJobSkills::Regular(x) => {
-                Either::Left(x.into_vec().into_iter()
-                    .map(|x| try_get_key_value(skills, &x))
-                    .map_ok(|skill| Self { skill: skill.into(), weight: 1.0 })
-                ).into_same_iter()
-            }
+            RawJobSkills::Regular(x) => x
+                .into_vec()
+                .into_iter()
+                .map(|x| Ok((try_get_key_value(skills, &x)?, 1.0)))
+                .try_collect(),
 
-            RawJobSkills::Weighted(x) => Either::Right(
-                x.into_iter()
+            RawJobSkills::Weighted(x) => x
+                .into_iter()
                 .map(|(x, w)| try_get_key_value(skills, &x).map(|x| (x, w)))
-                .map_ok(|(skill, weight)| Self { skill, weight })
-            ).into_same_iter(),
+                .try_collect(),
         };
     }
 }

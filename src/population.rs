@@ -242,6 +242,15 @@ impl<A: PopulationAllocator> Population<A> {
     }
 }
 
+impl<A: PopulationAllocator> Population<A> {
+    pub fn tick (&mut self) -> anyhow::Result<()> {
+        // Calculate deaths
+        // Calculate births
+        // todo
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PopulationMeanStats {
     males: f32,

@@ -13,8 +13,8 @@ pub type NamedBuilding<'a> = NamedEntry<'a, Building<'a>>;
 #[derive(Debug)]
 #[repr(C)]
 pub struct Building<'a> {
-    pub consumtion: BoxMap<NamedGood<'a>, u32>,
-    pub production: BoxMap<NamedGood<'a>, u32>,
+    pub consumtion: BoxMap<NamedGood<'a>, f32>,
+    pub production: BoxMap<NamedGood<'a>, f32>,
     pub jobs: BoxMap<NamedJob<'a>, BuildingJob<'a>>,
     pub learned_skills: Option<BoxMap<&'a Str, &'a Skill>>,
 }
@@ -92,9 +92,9 @@ impl<'a> BuildingJob<'a> {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RawBuilding {
-    pub consumption: BoxMap<Str, u32>,
+    pub consumption: BoxMap<Str, f32>,
     #[serde(default)]
-    pub production: BoxMap<Str, u32>,
+    pub production: BoxMap<Str, f32>,
     pub jobs: BoxMap<Str, RawBuildingJob>,
     #[serde(default)]
     pub learned_skills: Option<Box<[Str]>>,

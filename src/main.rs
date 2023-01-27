@@ -1,7 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(trait_alias, result_flattening, new_uninit, ptr_metadata, iterator_try_collect, rustc_attrs)]
 
-use population::{Population, PopulationAllocator};
 use shared::population::GenerationOps;
 use std::io::Write;
 use std::str::FromStr;
@@ -12,9 +11,10 @@ use vulkan::{
     Entry,
 };
 
-pub mod game;
+//pub mod game;
 pub mod data;
-pub mod population;
+//pub mod population;
+pub mod state;
 
 #[macro_export]
 macro_rules! flat_mod {
@@ -31,21 +31,23 @@ fn main() -> anyhow::Result<()> {
     let _ = unsafe { Entry::builder(1, 1, 0).build() }?;
     //let runtime = Runtime::new()?;
 
-    let phy = PhysicalDevice::first()?;
-    let ctx = Context::new(phy)?;
-    let alloc = Book::new(&ctx, None, None);
-    let mut population = Population::new(200_000, GenerationOps::default(), &alloc)?;
-
-    loop {
-        match first_menu(&population)? {
-            MenuOptions::Stats => {
-                println!("Population stats: {:#?}", population.count_stats()?);
-            }
-            MenuOptions::Exit => return Ok(()),
-        }
-    }
+    // let phy = PhysicalDevice::first()?;
+    // let ctx = Context::new(phy)?;
+    // let alloc = Book::new(&ctx, None, None);
+    // let mut population = Population::new(200_000, GenerationOps::default(), &alloc)?;
+// 
+    // loop {
+    //     match first_menu(&population)? {
+    //         MenuOptions::Stats => {
+    //             println!("Population stats: {:#?}", population.count_stats()?);
+    //         }
+    //         MenuOptions::Exit => return Ok(()),
+    //     }
+    // }
+    todo!()
 }
 
+/*
 #[repr(u8)]
 pub enum MenuOptions {
     Stats = 1,
@@ -72,6 +74,7 @@ fn first_menu<A: PopulationAllocator>(pops: &Population<A>) -> anyhow::Result<Me
         }
     }
 }
+*/
 
 #[test]
 fn disassemble() -> anyhow::Result<()> {
