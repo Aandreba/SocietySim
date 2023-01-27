@@ -20,14 +20,11 @@
     ),
 
     "academic": (
-        skills: [""]
+        skills: [] // tbd
     ),
 
     "officer": (
-        skills: {
-            "officework": 1,
-            "strategist": 2
-        }
+        skills: ["strategist"]
     ),
 
     "machinist": (

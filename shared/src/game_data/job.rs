@@ -1,8 +1,9 @@
 use super::{
     skill::{NamedSkill, Skill},
-    Str, NamedEntry,
+    Str, NamedEntry, try_get_key_value,
 };
 use elor::Either;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use vector_mapp::r#box::BoxMap;
 
@@ -15,10 +16,10 @@ pub struct Job<'a> {
 
 impl<'a> Job<'a> {
     #[inline]
-    pub fn from_raw(raw: RawJob, skills: &'a BoxMap<Str, Skill>) -> Self {
-        return Self {
-            skills: JobSkill::from_raw(raw.skills, skills).collect(),
-        }
+    pub fn from_raw(raw: RawJob, skills: &'a BoxMap<Str, Skill>) -> anyhow::Result<Self> {
+        return Ok(Self {
+            skills: JobSkill::from_raw(raw.skills, skills).try_collect()?,
+        })
     }
 }
 
@@ -32,18 +33,19 @@ impl<'a> JobSkill<'a> {
     pub fn from_raw(
         raw: RawJobSkills,
         skills: &'a BoxMap<Str, Skill>,
-    ) -> impl Iterator<Item = JobSkill<'a>> {
+    ) -> impl Iterator<Item = anyhow::Result<JobSkill<'a>>> {
         return match raw {
             RawJobSkills::Regular(x) => {
                 Either::Left(x.into_vec().into_iter()
-                    .filter_map(|x| skills.get_key_value(&x))
-                    .map(|skill| Self { skill: skill.into(), weight: 1.0 })
+                    .map(|x| try_get_key_value(skills, &x))
+                    .map_ok(|skill| Self { skill: skill.into(), weight: 1.0 })
                 ).into_same_iter()
             }
 
             RawJobSkills::Weighted(x) => Either::Right(
                 x.into_iter()
-                    .filter_map(|(skill, weight)| skills.get_key_value(&skill).map(|skill| Self { skill: skill.into(), weight }))
+                .map(|(x, w)| try_get_key_value(skills, &x).map(|x| (x, w)))
+                .map_ok(|(skill, weight)| Self { skill, weight })
             ).into_same_iter(),
         };
     }

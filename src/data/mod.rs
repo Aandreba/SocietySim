@@ -1,4 +1,4 @@
-use futures::{stream::FuturesUnordered, FutureExt, Stream, TryFutureExt, TryStreamExt};
+use futures::{stream::FuturesUnordered, FutureExt, Stream, TryFutureExt, TryStreamExt, StreamExt};
 use serde::de::DeserializeOwned;
 use shared::game_data::{
     building::{RawBuilding, Building},
@@ -67,13 +67,15 @@ impl GameContext {
 
         unsafe {
             let jobs = jobs
-                .map_ok(|(key, value)| (key, core::mem::transmute(Job::from_raw(value, &skills))))
+                .map_ok(|(key, value)| Ok((key, core::mem::transmute(Job::from_raw(value, &skills)?))))
+                .map(Result::flatten)
                 .try_collect::<VecMap<_, _>>()
                 .await?
                 .into();
 
             let buildings = buildings
-                .map_ok(|(key, value)| (key, core::mem::transmute(Building::from_raw(value, &goods, &jobs, &skills))))
+                .map_ok(|(key, value)| Ok((key, core::mem::transmute(Building::from_raw(value, &goods, &jobs, &skills)?))))
+                .map(Result::flatten)
                 .try_collect::<VecMap<_, _>>()
                 .await?
                 .into();

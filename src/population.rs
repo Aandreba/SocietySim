@@ -10,7 +10,6 @@ use shared::{
 };
 use std::{
     mem::MaybeUninit,
-    ops::{Deref, DerefMut},
 };
 use vulkan::{
     alloc::{DeviceAllocator, MemoryFlags},

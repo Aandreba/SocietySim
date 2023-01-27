@@ -15,5 +15,7 @@ spirv-std = { version = "0.4.0", features = ["glam"] }
 
 [target.'cfg(not(target_arch = "spirv"))'.dependencies]
 serde = { version = "1.0.152", features = ["derive"], default-features = false }
-vector_mapp = { version = "0.2.1", features = ["serde"] }
+vector_mapp = { version = "0.2.2", features = ["serde"] }
 elor = "1.1.4"
+anyhow = "1.0.68"
+itertools = "0.10.5"

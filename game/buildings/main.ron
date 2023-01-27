@@ -20,10 +20,6 @@
             "military_equipment": 10
         },
 
-        production: {
-            
-        },
-
         jobs: {
             "serviceman": (
                 amount: 1000,
@@ -44,7 +40,7 @@
             "bureocrat": 1000
         },
 
-        learned_skills: ["trooper"]
+        learned_skills: Some(["trooper"])
     ),
     
     "stem_university": (        
@@ -56,9 +52,9 @@
         jobs: {
             "academic": 750,
             "scientist": 750
-        }
+        },
 
-        learned_skills: ["engineer", "mathematitian"]
+        learned_skills: Some(["engineer", "mathematitian"])
     ),
 
     "arts_academy": (
@@ -70,8 +66,8 @@
         jobs: {
             "academic": 750,
             "designer": 750
-        }
+        },
         
-        learned_skills: ["artist"]
+        learned_skills: Some(["artist"])
     )
 }

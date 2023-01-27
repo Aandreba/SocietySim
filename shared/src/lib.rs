@@ -1,4 +1,5 @@
 #![cfg_attr(target_arch = "spirv", no_std, feature(asm_experimental_arch))]
+#![cfg_attr(not(target_arch = "spirv"), feature(iterator_try_collect))]
 #![feature(portable_simd)]
 
 macro_rules! flat_mod {

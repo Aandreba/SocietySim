@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 use crate::time::GameDuration;
-use super::{Str, NamedEntry};
+use super::{NamedEntry};
 
 pub type NamedSkill<'a> = NamedEntry<'a, Skill>;
 
